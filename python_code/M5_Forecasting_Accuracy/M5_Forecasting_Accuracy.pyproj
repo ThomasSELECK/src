@@ -1,0 +1,65 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>16771f6d-8a4f-431b-a654-53a3958379d7</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>dev\WholePipeline_test.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>M5_Forecasting_Accuracy</Name>
+    <RootNamespace>M5_Forecasting_Accuracy</RootNamespace>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="dev\files_paths.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="dev\TuningModel_test.py" />
+    <Compile Include="dev\WholePipeline_test.py" />
+    <Compile Include="m5_forecasting_accuracy\data_loading\data_loader.py" />
+    <Compile Include="m5_forecasting_accuracy\data_loading\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\metrics\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\models\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\model_utils\auto_tuner.py" />
+    <Compile Include="m5_forecasting_accuracy\model_utils\cross_validator.py" />
+    <Compile Include="m5_forecasting_accuracy\model_utils\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="dev\" />
+    <Folder Include="m5_forecasting_accuracy\" />
+    <Folder Include="m5_forecasting_accuracy\data_loading\" />
+    <Folder Include="m5_forecasting_accuracy\metrics\" />
+    <Folder Include="m5_forecasting_accuracy\models\" />
+    <Folder Include="m5_forecasting_accuracy\model_utils\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>
