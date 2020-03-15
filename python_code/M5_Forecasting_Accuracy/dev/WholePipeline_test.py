@@ -29,6 +29,8 @@ import lightgbm as lgb
 
 from dev.files_paths import *
 from m5_forecasting_accuracy.data_loading.data_loader import DataLoader
+from m5_forecasting_accuracy.preprocessing.PreprocessingStep import PreprocessingStep
+from m5_forecasting_accuracy.models.lightgbm_wrapper import LGBMRegressor
 
 pd.set_option("display.max_columns", 100)
 
@@ -65,8 +67,7 @@ def simple_fe(data_df):
     data_df["rolling_std_t30"] = data_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).std())
     data_df["rolling_skew_t30"] = data_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).skew())
     data_df["rolling_kurt_t30"] = data_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).kurt())
-    
-    
+        
     # Price features
     data_df["lag_price_t1"] = data_df.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))
     data_df["price_change_t1"] = (data_df["lag_price_t1"] - data_df["sell_price"]) / (data_df["lag_price_t1"])
@@ -88,25 +89,51 @@ def simple_fe(data_df):
 
     return data_df
 
-def run_lgb(data_df):
-    st = time.time()
-    print("Training model...")
+# Call to main
+if __name__ == "__main__":
+    # Start the timer
+    start_time = time.time()
+    
+    # Set the seed of numpy's PRNG
+    np.random.seed(2019)
+        
+    enable_validation = True
 
     # define list of features
-    features = ["item_id", "dept_id", "cat_id", "store_id", "state_id", "year", "month", "week", "day", "dayofweek", "event_name_1", "event_type_1", "event_name_2", "event_type_2", 
+    features = ["date", "item_id", "dept_id", "cat_id", "store_id", "state_id", "year", "month", "week", "day", "dayofweek", "event_name_1", "event_type_1", "event_name_2", "event_type_2", 
                 "snap_CA", "snap_TX", "snap_WI", "sell_price", "lag_t28", "lag_t29", "lag_t30", "rolling_mean_t7", "rolling_std_t7", "rolling_mean_t30", "rolling_mean_t90", 
                 "rolling_mean_t180", "rolling_std_t30", "price_change_t1", "price_change_t365", "rolling_price_std_t7", "rolling_price_std_t30", "rolling_skew_t30", "rolling_kurt_t30"]
 
-    # going to evaluate with the last 28 days
-    x_train = data_df[data_df["date"] <= "2016-03-27"]
-    y_train = x_train["demand"]
-    x_val = data_df[(data_df["date"] > "2016-03-27") & (data_df["date"] <= "2016-04-24")]
-    y_val = x_val["demand"]
-    test = data_df[(data_df["date"] > "2016-04-24")]
+    if not os.path.exists("E:/M5_Forecasting_Accuracy_cache/cached_data.pkl"):
+        dl = DataLoader()
+        train_df, test1_df, test2_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, enable_validation = True)
 
-    del data_df
+        data_df = pd.concat([train_df, test1_df], axis = 0)
 
-    gc.collect()
+        # We have the data to build our first model, let's build a baseline and predict the validation data (in our case is test1)
+        data_df = transform(data_df)
+        data_df = simple_fe(data_df)
+
+        # reduce memory for new features so we can train
+        data_df = dl.reduce_mem_usage(data_df, "data_df")
+
+        train_df = data_df.loc[data_df["date"] <= "2016-04-24"]
+        target_sr = train_df["demand"]
+        train_df = train_df[features]
+        test1_df = data_df[(data_df["date"] > "2016-04-24")]
+
+        del data_df
+
+        gc.collect()
+
+        with open("E:/M5_Forecasting_Accuracy_cache/cached_data.pkl", "wb") as f:
+            pickle.dump((train_df, target_sr, test1_df, test2_df, sample_submission_df), f)
+    else:
+        with open("E:/M5_Forecasting_Accuracy_cache/cached_data.pkl", "rb") as f:
+            train_df, target_sr, test1_df, test2_df, sample_submission_df = pickle.load(f)
+
+    st2 = time.time()
+    print("Training model...") 
 
     # define random hyperparammeters
     lgb_params = {
@@ -123,106 +150,41 @@ def run_lgb(data_df):
         "reg_alpha": 0,
         "reg_lambda": 0.5,
         "min_split_gain": 0.001,
+        "device": "cpu",
+        "verbosity": -1
     }
-
-    """
-    lgb_params = {
-        "boosting_type": "gbdt",
-        "metric": "rmse",
-        "objective": "regression",
-        "n_jobs": -1,
-        "seed": 236,
-        "learning_rate": 0.010,
-        "bagging_fraction": 0.8,
-        "bagging_freq": 10,
-        "colsample_bytree": 0.05,
-        "max_depth": -1,
-        "num_leaves": 30,
-        "max_bin": 255,
-        "reg_alpha": 0,
-        "reg_lambda": 100,
-        "min_split_gain": 0.5,
-        "min_child_weight": 19,
-        "min_child_samples": 70,
+    
+    lgbm = LGBMRegressor(lgb_params, early_stopping_rounds = 50, maximize = False, nrounds = 8000, eval_split_type = "time", eval_start_date = "2016-03-27", eval_date_col = "date", verbose_eval = 100, enable_cv = False)
+    lgbm.fit(train_df, target_sr)
         
-        "verbosity": -1,
-    }
-    #"device": "gpu"
-    """
+    print("Training model... done in", round(time.time() - st2, 3), "secs")
 
-    train_set = lgb.Dataset(x_train[features], y_train)
-    val_set = lgb.Dataset(x_val[features], y_val)
-    
-    del x_train, y_train
-
-    model = lgb.train(lgb_params, train_set, num_boost_round = 8000, early_stopping_rounds = 50, valid_sets = [train_set, val_set], verbose_eval = 100)
-    
-    val_pred = model.predict(x_val[features])
-    
-    val_score = np.sqrt(metrics.mean_squared_error(val_pred, y_val))
-    
-    print(f"Our val rmse score is {val_score}")
-    
-    y_pred = model.predict(test[features])
-    test["demand"] = y_pred
-    
-    print("Training model... done in", round(time.time() - st, 3), "secs")
-
-    return test
-
-def predict(test_df, submission_df):
     st = time.time()
     print("Generating predictions...")
 
-    predictions = test_df[["id", "date", "demand"]]
+    features = [f for f in features if f != "date"]
+    y_pred = lgbm.predict(test1_df[features])
+    test1_df["demand"] = y_pred
+    
+    predictions = test1_df[["id", "date", "demand"]]
     predictions = pd.pivot(predictions, index = "id", columns = "date", values = "demand").reset_index()
     predictions.columns = ["id"] + ["F" + str(i + 1) for i in range(28)]
 
-    evaluation_rows = [row for row in submission_df["id"] if "evaluation" in row] 
-    evaluation = submission_df[submission_df["id"].isin(evaluation_rows)]
-
-    validation = submission_df[["id"]].merge(predictions, on = "id")
+    evaluation_rows = [row for row in sample_submission_df["id"] if "evaluation" in row] 
+    evaluation = sample_submission_df[sample_submission_df["id"].isin(evaluation_rows)]
+    validation = sample_submission_df[["id"]].merge(predictions, on = "id")
+    
     final = pd.concat([validation, evaluation])
     final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_15032020.csv", index = False)
 
     print("Generating predictions... done in", round(time.time() - st, 3), "secs")
 
-# Call to main
-if __name__ == "__main__":
-    # Start the timer
-    start_time = time.time()
-    
-    # Set the seed of numpy's PRNG
-    np.random.seed(2019)
-        
-    enable_validation = True
+    feature_importance_df = lgbm.get_features_importance()
+    feature_importance_df.to_excel("E:/lgb_feature_importance.xlsx", index = False)
 
-    if not os.path.exists("E:/M5_Forecasting_Accuracy_cache/data_df.pkl"):
-        dl = DataLoader()
-        data_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, enable_validation = True)
-
-        # We have the data to build our first model, let's build a baseline and predict the validation data (in our case is test1)
-        data_df = transform(data_df)
-        data_df = simple_fe(data_df)
-
-        # reduce memory for new features so we can train
-        data_df = dl.reduce_mem_usage(data_df, "data_df")
-
-        with open("E:/M5_Forecasting_Accuracy_cache/data_df.pkl", "wb") as f:
-            pickle.dump(data_df, f)
-
-        with open("E:/M5_Forecasting_Accuracy_cache/sample_submission_df.pkl", "wb") as f:
-            pickle.dump(sample_submission_df, f)
-
-    else:
-        with open("E:/M5_Forecasting_Accuracy_cache/data_df.pkl", "rb") as f:
-            data_df = pickle.load(f)
-
-        with open("E:/M5_Forecasting_Accuracy_cache/sample_submission_df.pkl", "rb") as f:
-            sample_submission_df = pickle.load(f)
-
-    test_df = run_lgb(data_df)
-    predict(test_df, sample_submission_df)
+    lgbm.plot_features_importance()
     
     # Stop the timer and print the exectution time
     print("*** Test finished: Executed in:", time.time() - start_time, "seconds ***")
+
+    # 15/03 - [1998]  training's rmse: 2.24776        valid_1's rmse: 2.11289 - Public LB score: 0.64345 - File submission_14032020.csv

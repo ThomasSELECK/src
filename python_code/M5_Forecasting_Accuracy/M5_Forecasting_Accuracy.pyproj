@@ -30,15 +30,25 @@
     <Compile Include="m5_forecasting_accuracy\data_loading\__init__.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="m5_forecasting_accuracy\metrics\wrmsse_metric.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="m5_forecasting_accuracy\metrics\__init__.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="m5_forecasting_accuracy\models\lightgbm_wrapper.py" />
     <Compile Include="m5_forecasting_accuracy\models\__init__.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="m5_forecasting_accuracy\model_utils\auto_tuner.py" />
     <Compile Include="m5_forecasting_accuracy\model_utils\cross_validator.py" />
+    <Compile Include="m5_forecasting_accuracy\model_utils\efficient_pipeline.py" />
     <Compile Include="m5_forecasting_accuracy\model_utils\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\preprocessing\categorical_encoders.py" />
+    <Compile Include="m5_forecasting_accuracy\preprocessing\PreprocessingStep.py" />
+    <Compile Include="m5_forecasting_accuracy\preprocessing\__init__.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="m5_forecasting_accuracy\__init__.py">
@@ -52,6 +62,7 @@
     <Folder Include="m5_forecasting_accuracy\metrics\" />
     <Folder Include="m5_forecasting_accuracy\models\" />
     <Folder Include="m5_forecasting_accuracy\model_utils\" />
+    <Folder Include="m5_forecasting_accuracy\preprocessing\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
