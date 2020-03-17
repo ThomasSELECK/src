@@ -1,3 +1,22 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+###############################################################################
+# First solution for the M5 Forecasting Accuracy competition                  #
+#                                                                             #
+# This file contains the code needed to generate a temporal cross-validation. #
+# Inspired by:                                                                #
+# https://www.kaggle.com/harupy/m5-baseline?scriptVersionId=30317386          #
+# Developped using Python 3.8.                                                #
+#                                                                             #
+# Author: Thomas SELECK                                                       #
+# e-mail: thomas.seleck@outlook.fr                                            #
+# Date: 2020-03-17                                                            #
+# Version: 1.0.0                                                              #
+###############################################################################
+
+DAYS_TO_SEC = 3600 * 24
+
 class CustomTimeSeriesSplitter:
     def __init__(self, n_splits=5, train_days=80, test_days=20, dt_col="date"):
         self.n_splits = n_splits
@@ -8,8 +27,6 @@ class CustomTimeSeriesSplitter:
     def split(self, X, y=None, groups=None):
         sec = (X[self.dt_col] - X[self.dt_col][0]).dt.total_seconds()
         duration = sec.max()
-
-        DAYS_TO_SEC = 3600 * 24
 
         train_sec = self.train_days * DAYS_TO_SEC
         test_sec = self.test_days * DAYS_TO_SEC

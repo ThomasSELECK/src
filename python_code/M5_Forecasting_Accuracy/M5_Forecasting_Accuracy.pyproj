@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>16771f6d-8a4f-431b-a654-53a3958379d7</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>dev\WholePipeline_test.py</StartupFile>
+    <StartupFile>old\WholePipeline_test.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -26,9 +26,9 @@
     </Compile>
     <Compile Include="dev\TuningModel_test.py" />
     <Compile Include="dev\WholePipeline_test4.py" />
-    <Compile Include="dev\WholePipeline_test3.py" />
-    <Compile Include="dev\WholePipeline_test2.py" />
-    <Compile Include="dev\WholePipeline_test.py" />
+    <Compile Include="old\WholePipeline_test3.py" />
+    <Compile Include="old\WholePipeline_test2.py" />
+    <Compile Include="old\WholePipeline_test.py" />
     <Compile Include="m5_forecasting_accuracy\data_loading\data_loader.py" />
     <Compile Include="m5_forecasting_accuracy\data_loading\__init__.py">
       <SubType>Code</SubType>
@@ -69,6 +69,7 @@
     <Folder Include="m5_forecasting_accuracy\models\" />
     <Folder Include="m5_forecasting_accuracy\model_utils\" />
     <Folder Include="m5_forecasting_accuracy\preprocessing\" />
+    <Folder Include="old\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

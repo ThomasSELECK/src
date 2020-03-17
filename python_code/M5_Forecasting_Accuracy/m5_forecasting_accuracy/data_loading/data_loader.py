@@ -38,7 +38,8 @@ class DataLoader():
         None
         """
 
-    def reduce_mem_usage(self, data_df, dataset_name, verbose = True):
+    @staticmethod
+    def reduce_mem_usage(data_df, dataset_name, verbose = True):
         """
         This method reduces the memory footprint of each numeric feature 
         by choosing the most appropriate data type.

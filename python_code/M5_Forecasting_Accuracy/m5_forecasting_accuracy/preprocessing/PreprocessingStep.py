@@ -21,12 +21,14 @@ import re
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.decomposition import PCA
 
+from m5_forecasting_accuracy.data_loading.data_loader import DataLoader
+
 class PreprocessingStep(BaseEstimator, TransformerMixin):
     """
     This class defines the first preprocessing step.
     """
 
-    def __init__(self):
+    def __init__(self, test_days, dt_col):
         """
         This is the class' constructor.
 
@@ -39,7 +41,8 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         None
         """
 
-        pass
+        self.test_days = test_days
+        self.dt_col = dt_col
                                           
     def fit(self, X, y):
         """
@@ -79,34 +82,43 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         print("Preprocessing data...")   
         
         # Rolling demand features
-        X["lag_t28"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28))
-        X["lag_t29"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(29))
-        X["lag_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(30))
-        X["rolling_mean_t7"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(7).mean())
-        X["rolling_std_t7"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(7).std())
-        X["rolling_mean_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).mean())
-        X["rolling_mean_t90"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(90).mean())
-        X["rolling_mean_t180"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(180).mean())
-        X["rolling_std_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).std())
-        X["rolling_skew_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).skew())
-        X["rolling_kurt_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(28).rolling(30).kurt())
-        
+        for diff in [0, 1, 2]:
+            shift = self.test_days + diff
+            X[f"shift_t{shift}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(shift))
+
+        for size in [7, 30, 60, 90, 180]:
+            X[f"rolling_std_t{size}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(size).std())
+
+        for size in [7, 30, 60, 90, 180]:
+            X[f"rolling_mean_t{size}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(size).mean())
+
+        X["rolling_skew_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(30).skew())
+        X["rolling_kurt_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(30).kurt())
+
         # Price features
-        X["lag_price_t1"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))
-        X["price_change_t1"] = (X["lag_price_t1"] - X["sell_price"]) / (X["lag_price_t1"])
+        X["shift_price_t1"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))
+        X["price_change_t1"] = (X["shift_price_t1"] - X["sell_price"]) / (X["shift_price_t1"])
         X["rolling_price_max_t365"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1).rolling(365).max())
         X["price_change_t365"] = (X["rolling_price_max_t365"] - X["sell_price"]) / (X["rolling_price_max_t365"])
+
         X["rolling_price_std_t7"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(7).std())
         X["rolling_price_std_t30"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(30).std())
-        X.drop(["rolling_price_max_t365", "lag_price_t1"], inplace = True, axis = 1)
-    
-        # Time features
-        X["date"] = pd.to_datetime(X["date"])
-        X["year"] = X["date"].dt.year
-        X["month"] = X["date"].dt.month
-        X["week"] = X["date"].dt.week
-        X["day"] = X["date"].dt.day
-        X["dayofweek"] = X["date"].dt.dayofweek
+   
+        X.drop(["rolling_price_max_t365", "shift_price_t1"], axis = 1, inplace = True)
+
+        # Time-related features
+        X[self.dt_col] = pd.to_datetime(X[self.dt_col])
+        attrs = ["year", "quarter", "month", "week", "day", "dayofweek", "is_year_end", "is_year_start", "is_quarter_end", "is_quarter_start", "is_month_end", "is_month_start"]
+
+        for attr in attrs:
+            dtype = np.int16 if attr == "year" else np.int8
+            X[attr] = getattr(X[self.dt_col].dt, attr).astype(dtype)
+
+        X["is_weekend"] = X["dayofweek"].isin([5, 6]).astype(np.int8)
+
+        # Optimizations
+        X = DataLoader.reduce_mem_usage(X, "data_df")
+        X.sort_values("date", inplace = True)
     
         print("Preprocessing data... done in", round(time.time() - st, 3), "secs")
         

@@ -170,11 +170,19 @@ if __name__ == "__main__":
         tst.drop(["id", "sales", "date"], axis = 1, inplace = True)
         te["sales"].loc[te["date"] == day] = m_lgb.predict(tst)
 
-te[date >= fday
-   ][date >= fday+h, id := sub("validation", "evaluation", id)
-     ][, d := paste0("F", 1:28), by = id
-       ][, dcast(.SD, id ~ d, value.var = "sales")
-         ][, fwrite(.SD, "../../predictions/sub_dt_lgb_v3.csv")]
+    tmp = te.loc[te["date"] >= fday]
+    tmp["id"].loc[te["date"] >= datetime.strptime(fday, "%Y-%m-%d") + timedelta(days = h)] = tmp["id"].loc[te["date"] >= datetime.strptime(fday, "%Y-%m-%d") + timedelta(days = h)].str.replace("validation", "evaluation")
 
+    predictions = tmp[["id", "d", "sales"]]
+    predictions["d"] = predictions["d"].apply(lambda x: "F" + str(((int(x.replace("d_", "")) - 1914) % 28) + 1))
+    predictions = predictions.set_index(["id", "d"])["sales"].unstack().reset_index()
+    predictions = predictions[["id"] + ["F" + str(i) for i in range(1, 29)]]
+
+    predictions2 = predictions.groupby("id")["d"].apply(lambda x: pd.Series(["F" + str(i) for i in range(1, x.shape[0] + 1)])).reset_index().drop("level_1", axis = 1)
+    predictions.drop("d", axis = 1, inplace = True)
+    predictions = pd.pivot(predictions, index = "id", columns = "date", values = "sales").reset_index()
+    predictions.columns = ["id"] + ["F" + str(i + 1) for i in range(28)]
+    predictions.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "sub_dt_lgb_v3.csv", index = False)
+    
     # Stop the timer and print the exectution time
     print("*** Test finished: Executed in:", time.time() - start_time, "seconds ***")
