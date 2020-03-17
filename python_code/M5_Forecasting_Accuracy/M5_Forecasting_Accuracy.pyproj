@@ -25,6 +25,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="dev\TuningModel_test.py" />
+    <Compile Include="dev\WholePipeline_test4.py" />
+    <Compile Include="dev\WholePipeline_test3.py" />
+    <Compile Include="dev\WholePipeline_test2.py" />
     <Compile Include="dev\WholePipeline_test.py" />
     <Compile Include="m5_forecasting_accuracy\data_loading\data_loader.py" />
     <Compile Include="m5_forecasting_accuracy\data_loading\__init__.py">
@@ -42,6 +45,9 @@
     </Compile>
     <Compile Include="m5_forecasting_accuracy\model_utils\auto_tuner.py" />
     <Compile Include="m5_forecasting_accuracy\model_utils\cross_validator.py" />
+    <Compile Include="m5_forecasting_accuracy\model_utils\CustomTimeSeriesSplitter.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="m5_forecasting_accuracy\model_utils\efficient_pipeline.py" />
     <Compile Include="m5_forecasting_accuracy\model_utils\__init__.py">
       <SubType>Code</SubType>

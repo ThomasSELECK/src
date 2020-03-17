@@ -18,6 +18,7 @@ import gc
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 class DataLoader():
     """
@@ -93,6 +94,23 @@ class DataLoader():
             print("        Memory usage decreased from {:5.2f} MB to {:5.2f} MB ({:.1f}% reduction)".format(start_mem, end_mem, 100 * (start_mem - end_mem) / start_mem))
 
         return data_df
+
+    def _encode_categorical(self, df, cols):
+        for col in cols:
+            # Leave NaN as it is.
+            le = LabelEncoder()
+            not_null = df[col][df[col].notnull()]
+            df[col] = pd.Series(le.fit_transform(not_null), index=not_null.index)
+
+        return df
+       
+    def _merge_calendar(data, calendar):
+        calendar = calendar.drop(["weekday", "wday", "month", "year"], axis=1)
+        return data.merge(calendar, how="left", on="d").drop("d", axis=1)
+
+
+    def _merge_sell_prices(data, sell_prices):
+        return data.merge(sell_prices, how="left", on=["store_id", "item_id", "wm_yr_wk"])
     
     def load_data(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, enable_validation = True):
         """
@@ -128,71 +146,96 @@ class DataLoader():
 
         calendar_df = pd.read_csv(calendar_data_path_str)
         calendar_df = self.reduce_mem_usage(calendar_df, "calendar_df")
-        print("        Calendar has {} rows and {} columns".format(calendar_df.shape[0], calendar_df.shape[1]))
 
         sell_prices_df = pd.read_csv(sell_prices_data_path_str)
         sell_prices_df = self.reduce_mem_usage(sell_prices_df, "sell_prices_df")
-        print("        Sell prices has {} rows and {} columns".format(sell_prices_df.shape[0], sell_prices_df.shape[1]))
 
         sales_train_validation_df = pd.read_csv(sales_train_validation_data_path_str)
-        print("        Sales train validation has {} rows and {} columns".format(sales_train_validation_df.shape[0], sales_train_validation_df.shape[1]))
+        sales_train_validation_df = self.reduce_mem_usage(sales_train_validation_df, "sales_train_validation_df")
 
         sample_submission_df = pd.read_csv(sample_submission_data_path_str)
-
-        print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
+        sample_submission_df = self.reduce_mem_usage(sample_submission_df, "sample_submission_df")
         
+        print("calendar_df shape:", calendar_df.shape)
+        print("sell_prices_df shape:", sell_prices_df.shape)
+        print("sales_train_validation_df shape:", sales_train_validation_df.shape)
+        print("sample_submission_df shape:", sample_submission_df.shape)
+
+        # calendar shape: (1969, 14)
+        # sell_prices shape: (6841121, 4)
+        # sales_train_val shape: (30490, 1919)
+        # submission shape: (60980, 29)
+        
+        print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
+
+        calendar_df = self._encode_categorical(calendar_df, ["event_name_1", "event_type_1", "event_name_2", "event_type_2"])
+        calendar_df = self.reduce_mem_usage(calendar_df, "calendar_df")
+
+        sales_train_validation_df = self._encode_categorical(sales_train_validation_df, ["item_id", "dept_id", "cat_id", "store_id", "state_id"],)
+        sales_train_validation_df = self.reduce_mem_usage(sales_train_validation_df, "sales_train_validation_df")
+
+        sell_prices_df = self._encode_categorical(sell_prices_df, ["item_id", "store_id"])
+        sell_prices_df = self.reduce_mem_usage(sell_prices_df, "sell_prices_df")
+
+        nrows = 27500000
+        id_columns = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"]
+
         # Get products table
-        products_df = sales_train_validation_df[["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"]].drop_duplicates()
+        products_df = sales_train_validation_df[id_columns]
 
         # Melt sales data: each column "d_[0-9]+" give the sales amount for the day "[0-9]+". So, we convert the data to get one line per day instead of one column.
-        sales_train_validation_df = pd.melt(sales_train_validation_df, id_vars = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"], var_name = "day", value_name = "demand")
-        print("    Melted sales train validation has {} rows and {} columns".format(sales_train_validation_df.shape[0], sales_train_validation_df.shape[1]))
+        sales_train_validation_df = sales_train_validation_df.melt(id_vars = id_columns, var_name = "d", value_name = "demand")
         sales_train_validation_df = self.reduce_mem_usage(sales_train_validation_df, "sales_train_validation_df")
-            
+
         # Seperate test dataframes
-        test1_rows = [row for row in sample_submission_df["id"] if "validation" in row]
-        test2_rows = [row for row in sample_submission_df["id"] if "evaluation" in row]
-        test1_df = sample_submission_df[sample_submission_df["id"].isin(test1_rows)]
-        test2_df = sample_submission_df[sample_submission_df["id"].isin(test2_rows)]
-    
+        vals = sample_submission_df[sample_submission_df["id"].str.endswith("validation")]
+        evals = sample_submission_df[sample_submission_df["id"].str.endswith("evaluation")]
+            
         # Change column names
-        test1_df.columns = ["id", "d_1914", "d_1915", "d_1916", "d_1917", "d_1918", "d_1919", "d_1920", "d_1921", "d_1922", "d_1923", "d_1924", "d_1925", "d_1926", "d_1927", "d_1928",
-                            "d_1929", "d_1930", "d_1931", "d_1932", "d_1933", "d_1934", "d_1935", "d_1936", "d_1937", "d_1938", "d_1939", "d_1940", "d_1941"]
-        test2_df.columns = ["id", "d_1942", "d_1943", "d_1944", "d_1945", "d_1946", "d_1947", "d_1948", "d_1949", "d_1950", "d_1951", "d_1952", "d_1953", "d_1954", "d_1955", "d_1956", 
-                            "d_1957", "d_1958", "d_1959", "d_1960", "d_1961", "d_1962", "d_1963", "d_1964", "d_1965", "d_1966", "d_1967", "d_1968", "d_1969"]
+        DAYS_PRED = sample_submission_df.shape[1] - 1  # 28
+        vals.columns = ["id"] + [f"d_{d}" for d in range(1914, 1914 + DAYS_PRED)]
+        evals.columns = ["id"] + [f"d_{d}" for d in range(1942, 1942 + DAYS_PRED)]
         
         # Merge with products table
-        test2_df["id"] = test2_df["id"].str.replace("_evaluation", "_validation")
-        test1_df = test1_df.merge(products_df, how = "left", on = "id")
-        test2_df = test2_df.merge(products_df, how = "left", on = "id")
-        test2_df["id"] = test2_df["id"].str.replace("_validation", "_evaluation")
-    
-        # Melt the test data. So, we convert the data to get one line per day instead of one column.
-        test1_df = pd.melt(test1_df, id_vars = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"], var_name = "day", value_name = "demand")
-        test2_df = pd.melt(test2_df, id_vars = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"], var_name = "day", value_name = "demand")
-        train_df = sales_train_validation_df
-        
-        # get only a sample for fst training
-        nrows = 27500000
-        train_df = train_df.loc[nrows:]
-    
-        # drop some calendar features
-        calendar_df.drop(["weekday", "wday", "month", "year"], inplace = True, axis = 1)
-        
-        train_df = pd.merge(train_df, calendar_df, how = "left", left_on = ["day"], right_on = ["d"])
-        train_df.drop(["d", "day"], inplace = True, axis = 1)
-        test1_df = pd.merge(test1_df, calendar_df, how = "left", left_on = ["day"], right_on = ["d"])
-        test1_df.drop(["d", "day"], inplace = True, axis = 1)
-        test2_df = pd.merge(test2_df, calendar_df, how = "left", left_on = ["day"], right_on = ["d"])
-        test2_df.drop(["d", "day"], inplace = True, axis = 1)
+        evals["id"] = evals["id"].str.replace("_evaluation", "_validation")
+        vals = vals.merge(products_df, how = "left", on = "id")
+        evals = evals.merge(products_df, how = "left", on = "id")
+        evals["id"] = evals["id"].str.replace("_validation", "_evaluation")
 
-        # get the sell price data (this feature should be very important)
-        train_df = train_df.merge(sell_prices_df, on = ["store_id", "item_id", "wm_yr_wk"], how = "left")
-        print("Our final dataset to train has {} rows and {} columns".format(train_df.shape[0], train_df.shape[1]))
-        test1_df = test1_df.merge(sell_prices_df, on = ["store_id", "item_id", "wm_yr_wk"], how = "left")
-        test2_df = test2_df.merge(sell_prices_df, on = ["store_id", "item_id", "wm_yr_wk"], how = "left")
-    
+        # Melt the test data. So, we convert the data to get one line per day instead of one column.
+        vals = vals.melt(id_vars = id_columns, var_name = "d", value_name = "demand")
+        evals = evals.melt(id_vars = id_columns, var_name = "d", value_name = "demand")
+
+        sales_train_validation_df["part"] = "train"
+        vals["part"] = "validation"
+        evals["part"] = "evaluation"
+
+        data = pd.concat([sales_train_validation_df, vals, evals], axis = 0)
+
+        del sales_train_validation_df, vals, evals
         gc.collect()
+
+        # get only a sample for fst training
+        data = data.loc[nrows:]
+
+        # delete evaluation for now.
+        data = data[data["part"] != "evaluation"]
+
+        gc.collect()
+        
+        # Merge calendar data
+        calendar_df = calendar_df.drop(["weekday", "wday", "month", "year"], axis = 1)
+        data = data.merge(calendar_df, how = "left", on = "d").drop("d", axis = 1)
+
+        # Merge sell prices data
+        data = data.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
+
+        data = self.reduce_mem_usage(data, "data")
+
+        del calendar_df, sell_prices_df
+        gc.collect()
+                     
+        
 
           
         """
@@ -227,4 +270,4 @@ class DataLoader():
 
         print("Loading data... done")
 
-        return train_df, test1_df, test2_df, sample_submission_df
+        return data, sample_submission_df
