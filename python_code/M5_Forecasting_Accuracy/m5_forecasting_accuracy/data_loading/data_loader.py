@@ -38,6 +38,8 @@ class DataLoader():
         None
         """
 
+        pass
+
     @staticmethod
     def reduce_mem_usage(data_df, dataset_name, verbose = True):
         """
@@ -113,7 +115,7 @@ class DataLoader():
     def _merge_sell_prices(data, sell_prices):
         return data.merge(sell_prices, how="left", on=["store_id", "item_id", "wm_yr_wk"])
     
-    def load_data(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, enable_validation = True):
+    def load_data(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True):
         """
         This function is a wrapper for the loading of the data.
 
@@ -122,8 +124,8 @@ class DataLoader():
         training_set_path_str : string
                 A string containing the path of the training set file.
 
-        testing_set_path_str : string
-                A string containing the path of the testing set file.
+        train_test_date_split : string
+                A date where the data will be splitted into training and testing sets.
 
         enable_validation : bool (default = True)
                 Whether to split training data into training and validation data.
@@ -211,34 +213,39 @@ class DataLoader():
         vals["part"] = "validation"
         evals["part"] = "evaluation"
 
-        data = pd.concat([sales_train_validation_df, vals, evals], axis = 0)
+        training_set_df = sales_train_validation_df
+        testing_set_df = pd.concat([vals, evals], axis = 0)
 
-        del sales_train_validation_df, vals, evals
-        gc.collect()
+        #del sales_train_validation_df, vals, evals
+        #gc.collect()
 
         # get only a sample for fst training
-        data = data.loc[nrows:]
+        training_set_df = training_set_df.loc[nrows:]
 
         # delete evaluation for now.
-        data = data[data["part"] != "evaluation"]
-
+        testing_set_df = testing_set_df[testing_set_df["part"] != "evaluation"]
         gc.collect()
         
         # Merge calendar data
         calendar_df = calendar_df.drop(["weekday", "wday", "month", "year"], axis = 1)
-        data = data.merge(calendar_df, how = "left", on = "d").drop("d", axis = 1)
+        training_set_df = training_set_df.merge(calendar_df, how = "left", on = "d").drop("d", axis = 1)
+        testing_set_df = testing_set_df.merge(calendar_df, how = "left", on = "d").drop("d", axis = 1)
 
         # Merge sell prices data
-        data = data.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
+        training_set_df = training_set_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
+        testing_set_df = testing_set_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
 
-        data = self.reduce_mem_usage(data, "data")
+        # Reduce memory usage
+        training_set_df = self.reduce_mem_usage(training_set_df, "training_set_df")
+        testing_set_df = self.reduce_mem_usage(testing_set_df, "testing_set_df")
 
         del calendar_df, sell_prices_df
         gc.collect()
                      
-        
-
-          
+        target_sr = training_set_df["demand"].reset_index(drop = True)
+        """training_set_df.drop("demand", axis = 1, inplace = True)
+        testing_set_df.drop("demand", axis = 1, inplace = True)"""
+                  
         """
         # Generate a validation set if enable_validation is True
         if enable_validation:
@@ -271,4 +278,4 @@ class DataLoader():
 
         print("Loading data... done")
 
-        return data, sample_submission_df
+        return training_set_df, target_sr, testing_set_df, sample_submission_df

@@ -83,7 +83,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_17032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_18032020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -96,10 +96,30 @@ if __name__ == "__main__":
     enable_validation = True
 
     dl = DataLoader()
-    data_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, enable_validation = True)
+    training_set_df, target_sr, testing_set_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-04-24", enable_validation = True)
 
-    prp = PreprocessingStep(test_days = sample_submission_df.shape[1] - 1, dt_col = "date")
+    data_df = pd.concat([training_set_df, testing_set_df], axis = 0).reset_index(drop = True)
+
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v2.pkl", "wb") as f:
+        pickle.dump((data_df, training_set_df, testing_set_df, sample_submission_df), f)
+
+    print("Training set shape:", training_set_df.shape)
+    print("Testing set shape:", testing_set_df.shape)
+
+    """prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 180)
+    training_set_df = prp.fit_transform(training_set_df, training_set_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    testing_set_df = prp.transform(testing_set_df)"""
+
+    #print("Training set shape after preprocessing:", training_set_df.shape)
+    #print("Testing set shape after preprocessing:", testing_set_df.shape)
+
+    data_df = pd.concat([training_set_df, testing_set_df], axis = 0).reset_index(drop=True)
+
+    prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 180)
     data_df = prp.transform(data_df)
+
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v2.pkl", "wb") as f:
+        pickle.dump((data_df, training_set_df, testing_set_df), f)
 
     DAYS_PRED = sample_submission_df.shape[1] - 1 # 28
     dt_col = "date"
@@ -123,7 +143,7 @@ if __name__ == "__main__":
     # 2011-01-29 ~ 2016-04-24 : d_1    ~ d_1913
     # 2016-04-25 ~ 2016-05-22 : d_1914 ~ d_1941 (public)
     # 2016-05-23 ~ 2016-06-19 : d_1942 ~ d_1969 (private)
-
+    
     train_mask_sr = data_df["date"] <= "2016-04-24"
 
     # Attach "date" to X_train for cross validation.
@@ -133,6 +153,9 @@ if __name__ == "__main__":
 
     # keep these two columns to use later.
     id_date = data_df[~train_mask_sr][["id", "date"]].reset_index(drop = True)
+
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint3_v2.pkl", "wb") as f:
+        pickle.dump((X_train, y_train, X_test, id_date), f)
 
     del data_df
     gc.collect()
@@ -206,5 +229,13 @@ if __name__ == "__main__":
     print("*** Test finished: Executed in:", time.time() - start_time, "seconds ***")
 
     # 17/03:
-    # [1998]  training's rmse: 2.24776        valid_1's rmse: 2.11289
+    # [897]   train's rmse: 2.12774   valid's rmse: 2.22693
+    # [833]   train's rmse: 2.12977   valid's rmse: 2.1448
+    # [1175]  train's rmse: 2.09825   valid's rmse: 2.12569
     # Public LB score: 0.62366 - File: submission_kaggle_17032020_LB_0.62366.csv
+
+    # 18/03:
+    # [1481]  train's rmse: 2.07964   valid's rmse: 2.2132
+    # [1142]  train's rmse: 2.10411   valid's rmse: 2.14399
+    # [965]   train's rmse: 2.11633   valid's rmse: 2.13404
+    # Public LB score: 0.62222 - File: submission_kaggle_18032020_LB_0.62222.csv
