@@ -50,6 +50,7 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         self._last_train_rows = None
         self._orig_earliest_date = None
         self._is_train_data = False # Whether we are processing train data
+        self._cols_dtype_dict = None
 
         self.features = [
             "item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2", "snap_CA", "snap_TX", "snap_WI", "sell_price",
@@ -83,7 +84,7 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
             tmp = X[["date"]]
             tmp["date"] = pd.to_datetime(tmp["date"])
             earliest_date = tmp["date"].max() - timedelta(days = self.keep_last_train_days)
-            self._last_train_rows = X.loc[tmp["date"] >= earliest_date]
+            self._last_train_rows = X.loc[tmp["date"] > earliest_date]
 
         self._is_train_data = True
         
@@ -106,6 +107,13 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
                             
         st = time.time()
         print("Preprocessing data...")   
+        print("X.shape:", X.shape)
+
+        # If doing predictions, append the train rows at the beginning
+        if self._last_train_rows is not None and not self._is_train_data:
+            print("self._last_train_rows.shape:", self._last_train_rows.shape)
+            self._orig_earliest_date = pd.to_datetime(X["date"]).min()
+            X = pd.concat([self._last_train_rows, X], axis = 0).reset_index(drop = True)
                 
         # Rolling demand features
         for diff in [0, 1, 2]:
@@ -141,10 +149,21 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
             X[attr] = getattr(X[self.dt_col].dt, attr).astype(dtype)
 
         X["is_weekend"] = X["dayofweek"].isin([5, 6]).astype(np.int8)
-        
-        # Optimizations
-        X = DataLoader.reduce_mem_usage(X, "data_df")
-            
+           
+        if self._last_train_rows is not None and not self._is_train_data:
+            X = X.loc[pd.to_datetime(X["date"]) >= self._orig_earliest_date]
+
+            # Optimizations
+            for col in X.columns.tolist():
+                X[col] = X[col].astype(self._cols_dtype_dict[col])
+        else:  
+            # Optimizations
+            X = DataLoader.reduce_mem_usage(X, "data_df") # Need to take same dtypes as train
+            self._cols_dtype_dict = {col: X[col].dtype for col in X.columns.tolist()}
+            self._is_train_data = False
+
+        print("out X.shape:", X.shape)
+    
         print("Preprocessing data... done in", round(time.time() - st, 3), "secs")
         
         return X
