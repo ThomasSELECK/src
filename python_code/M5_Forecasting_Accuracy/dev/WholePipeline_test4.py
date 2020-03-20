@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import shutil
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer
 import lightgbm as lgb
 from datetime import datetime
 from datetime import timedelta
@@ -37,6 +37,7 @@ from m5_forecasting_accuracy.data_loading.data_loader import DataLoader
 from m5_forecasting_accuracy.preprocessing.PreprocessingStep import PreprocessingStep
 from m5_forecasting_accuracy.models.lightgbm_wrapper import LGBMRegressor
 from m5_forecasting_accuracy.model_utils.CustomTimeSeriesSplitter import CustomTimeSeriesSplitter
+from m5_forecasting_accuracy.preprocessing.categorical_encoders import CategoricalFeaturesEncoder, OrdinalEncoder, GroupingEncoder, LeaveOneOutEncoder, TargetAvgEncoder
 
 pd.set_option("display.max_columns", 100)
 
@@ -83,7 +84,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_19032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_20032020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -98,14 +99,27 @@ if __name__ == "__main__":
     dl = DataLoader()
     training_set_df, target_sr, testing_set_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-04-24", enable_validation = True)
 
-    data_df = pd.concat([training_set_df, testing_set_df], axis = 0).reset_index(drop = True)
-
-    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v3.pkl", "wb") as f:
-        pickle.dump((data_df, training_set_df, testing_set_df, sample_submission_df), f)
-
     print("Training set shape:", training_set_df.shape)
     print("Testing set shape:", testing_set_df.shape)
 
+    #categorical_columns_to_be_encoded_lst = ["item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2"]
+    #categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
+
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v3.pkl", "wb") as f:
+        pickle.dump((training_set_df, testing_set_df, sample_submission_df), f)
+
+    """categorical_columns_to_be_encoded_lst = ["item_id", "dept_id", "dept_id", "store_id", "store_id", 
+                                             "cat_id", "cat_id", "state_id", "state_id", "event_name_1", 
+                                             "event_type_1", "event_name_2", "event_type_2", "weekday", "weekday"]
+
+    categorical_encoders_lst = [TargetAvgEncoder(), LabelBinarizer(), TargetAvgEncoder(), TargetAvgEncoder(), LabelBinarizer(), 
+                                LabelBinarizer(), TargetAvgEncoder(), LabelBinarizer(), TargetAvgEncoder(), LabelBinarizer(), 
+                                LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), TargetAvgEncoder()]"""
+    
+    """cat_enc = CategoricalFeaturesEncoder(categorical_columns_to_be_encoded_lst, categorical_encoders_lst)
+    training_set_df = cat_enc.fit_transform(training_set_df, training_set_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    testing_set_df = cat_enc.transform(testing_set_df)"""
+    
     prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 366) # 366 = shift + max rolling (365)
     training_set_df = prp.fit_transform(training_set_df, training_set_df["demand"]) # y is not used here; think to generate y_lag using shifts
     testing_set_df = prp.transform(testing_set_df)
@@ -113,33 +127,20 @@ if __name__ == "__main__":
     print("Training set shape after preprocessing:", training_set_df.shape)
     print("Testing set shape after preprocessing:", testing_set_df.shape)
 
-    DAYS_PRED = sample_submission_df.shape[1] - 1 # 28
-    dt_col = "date"
-    
-    features = [
-        "item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2", "snap_CA", "snap_TX", "snap_WI", "sell_price",
-        # demand features.
-        "shift_t28", "shift_t29", "shift_t30", "rolling_std_t7", "rolling_std_t30", "rolling_std_t60", "rolling_std_t90", "rolling_std_t180", "rolling_mean_t7", "rolling_mean_t30",
-        "rolling_mean_t60", "rolling_mean_t90", "rolling_mean_t180", "rolling_skew_t30", "rolling_kurt_t30", 
-        # price features
-        "price_change_t1", "price_change_t365", "rolling_price_std_t7", "rolling_price_std_t30", 
-        # time features.
-        "year", "month", "week", "day", "dayofweek", "is_year_end", "is_year_start", "is_quarter_end", "is_quarter_start", "is_month_end", "is_month_start", "is_weekend"
-        ]
-        
-    # Attach "date" to X_train for cross validation.
-    X_train = training_set_df[["date"] + features].reset_index(drop = True)
-    y_train = training_set_df["demand"].reset_index(drop = True)
-    X_test = testing_set_df[features].reset_index(drop = True)
-
-    # keep these two columns to use later.
-    id_date = testing_set_df[["id", "date"]].reset_index(drop = True)
-
-    del data_df
-    gc.collect()
-    
+    dt_col = "date"            
+    id_date = testing_set_df[["id", "date"]].reset_index(drop = True) # keep these two columns to use later.
     DAYS_PRED = sample_submission_df.shape[1] - 1  # 28
 
+    # Attach "date" to X_train for cross validation.
+    useless_features_lst = ["wm_yr_wk", "quarter", "id", "demand"]
+    y_train = training_set_df["demand"].reset_index(drop = True)
+    training_set_df.drop(useless_features_lst, axis = 1, inplace = True)
+    testing_set_df.drop(["date"] + useless_features_lst, axis = 1, inplace = True)
+    X_train = training_set_df.reset_index(drop = True)
+    X_test = testing_set_df.reset_index(drop = True)
+
+    gc.collect()
+    
     bst_params = {
         "boosting_type": "gbdt",
         "metric": "rmse",
@@ -189,8 +190,6 @@ if __name__ == "__main__":
     print(feature_importance_df)
     feature_importance_df.to_excel("E:/importances.xlsx")
 
-    
-
     # Stop the timer and print the exectution time
     print("*** Test finished: Executed in:", time.time() - start_time, "seconds ***")
 
@@ -210,4 +209,4 @@ if __name__ == "__main__":
     # [1481]  train's rmse: 2.07964   valid's rmse: 2.2132
     # [1142]  train's rmse: 2.10411   valid's rmse: 2.14399
     # [965]   train's rmse: 2.11633   valid's rmse: 2.13404
-    # Public LB score: 0.62222 - File: submission_kaggle_19032020_LB_0.62222.csv
+    # Public LB score: 0.62222 - File: submission_kaggle_19032020_LB_0.62369.csv

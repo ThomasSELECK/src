@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>16771f6d-8a4f-431b-a654-53a3958379d7</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>old\WholePipeline_test.py</StartupFile>
+    <StartupFile>dev\WholePipeline_test4.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>

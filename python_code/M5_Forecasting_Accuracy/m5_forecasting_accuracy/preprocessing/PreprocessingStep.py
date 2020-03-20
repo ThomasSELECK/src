@@ -106,16 +106,14 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         """
                             
         st = time.time()
-        print("Preprocessing data...")   
-        print("X.shape:", X.shape)
+        print("Preprocessing data...")
 
         # If doing predictions, append the train rows at the beginning
         if self._last_train_rows is not None and not self._is_train_data:
-            print("self._last_train_rows.shape:", self._last_train_rows.shape)
             self._orig_earliest_date = pd.to_datetime(X["date"]).min()
             X = pd.concat([self._last_train_rows, X], axis = 0).reset_index(drop = True)
                 
-        # Rolling demand features
+        # Rolling demand features # WARNING: shift MUST be at least 28 days to avoid leakage!!!
         for diff in [0, 1, 2]:
             shift = self.test_days + diff
             X[f"shift_t{shift}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(shift))
@@ -139,7 +137,7 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         X["rolling_price_std_t30"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(30).std())
    
         X.drop(["rolling_price_max_t365", "shift_price_t1"], axis = 1, inplace = True)
-        
+
         # Time-related features
         X[self.dt_col] = pd.to_datetime(X[self.dt_col])
         attrs = ["year", "quarter", "month", "week", "day", "dayofweek", "is_year_end", "is_year_start", "is_quarter_end", "is_quarter_start", "is_month_end", "is_month_start"]
@@ -161,9 +159,7 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
             X = DataLoader.reduce_mem_usage(X, "data_df") # Need to take same dtypes as train
             self._cols_dtype_dict = {col: X[col].dtype for col in X.columns.tolist()}
             self._is_train_data = False
-
-        print("out X.shape:", X.shape)
-    
+                
         print("Preprocessing data... done in", round(time.time() - st, 3), "secs")
         
         return X

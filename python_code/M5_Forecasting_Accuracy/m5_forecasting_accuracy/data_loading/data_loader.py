@@ -209,7 +209,7 @@ class DataLoader():
         vals = vals.melt(id_vars = id_columns, var_name = "d", value_name = "demand")
         evals = evals.melt(id_vars = id_columns, var_name = "d", value_name = "demand")
 
-        sales_train_validation_df["part"] = "train"
+        #sales_train_validation_df["part"] = "train"
         vals["part"] = "validation"
         evals["part"] = "evaluation"
 
@@ -224,6 +224,7 @@ class DataLoader():
 
         # delete evaluation for now.
         testing_set_df = testing_set_df[testing_set_df["part"] != "evaluation"]
+        testing_set_df.drop("part", axis = 1, inplace = True)
         gc.collect()
         
         # Merge calendar data
