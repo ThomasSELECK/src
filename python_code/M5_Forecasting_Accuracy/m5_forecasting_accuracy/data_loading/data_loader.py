@@ -171,6 +171,11 @@ class DataLoader():
         
         print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
 
+        # Create some features on calendar
+        #calendar_df["is_Christmas"] = (calendar_df["event_name_1"] == "Christmas").astype(np.int8)
+        #calendar_df["is_Thanksgiving"] = (calendar_df["event_name_1"] == "Thanksgiving").astype(np.int8)
+        #calendar_df["all_Easter"] = (calendar_df["event_name_1"] == "Easter").astype(np.int8) + (calendar_df["event_name_1"] == "OrthodoxEaster").astype(np.int8)
+
         calendar_df = self._encode_categorical(calendar_df, ["event_name_1", "event_type_1", "event_name_2", "event_type_2"])
         calendar_df = self.reduce_mem_usage(calendar_df, "calendar_df")
 
@@ -179,11 +184,9 @@ class DataLoader():
 
         sell_prices_df = self._encode_categorical(sell_prices_df, ["item_id", "store_id"])
         sell_prices_df = self.reduce_mem_usage(sell_prices_df, "sell_prices_df")
-
-        nrows = 27500000
-        id_columns = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"]
-
+        
         # Get products table
+        id_columns = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"]
         products_df = sales_train_validation_df[id_columns]
 
         # Melt sales data: each column "d_[0-9]+" give the sales amount for the day "[0-9]+". So, we convert the data to get one line per day instead of one column.
@@ -220,7 +223,11 @@ class DataLoader():
         #gc.collect()
 
         # get only a sample for fst training
-        training_set_df = training_set_df.loc[nrows:]
+        training_set_df["d2"] = training_set_df["d"].str.replace("d_", "").apply(lambda x: int(x))
+        #nrows = 27500000
+        #training_set_df = training_set_df.loc[nrows:]
+        training_set_df = training_set_df.loc[training_set_df["d2"] >= 815]
+        training_set_df.drop("d2", axis = 1, inplace = True)
 
         # delete evaluation for now.
         testing_set_df = testing_set_df[testing_set_df["part"] != "evaluation"]
@@ -243,7 +250,7 @@ class DataLoader():
         del calendar_df, sell_prices_df
         gc.collect()
                      
-        target_sr = training_set_df["demand"].reset_index(drop = True)
+        target_sr = training_set_df["demand"]
         """training_set_df.drop("demand", axis = 1, inplace = True)
         testing_set_df.drop("demand", axis = 1, inplace = True)"""
                   

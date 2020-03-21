@@ -26,6 +26,7 @@
     </Compile>
     <Compile Include="dev\TuningModel_test.py" />
     <Compile Include="dev\WholePipeline_test4.py" />
+    <Compile Include="m5_forecasting_accuracy\preprocessing\ParallelGroupBy.py" />
     <Compile Include="old\WholePipeline_test3.py" />
     <Compile Include="old\WholePipeline_test2.py" />
     <Compile Include="old\WholePipeline_test.py" />

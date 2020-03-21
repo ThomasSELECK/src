@@ -84,7 +84,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_20032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_21032020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -124,6 +124,9 @@ if __name__ == "__main__":
     training_set_df = prp.fit_transform(training_set_df, training_set_df["demand"]) # y is not used here; think to generate y_lag using shifts
     testing_set_df = prp.transform(testing_set_df)
 
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v3.pkl", "wb") as f:
+        pickle.dump((training_set_df, testing_set_df, target_sr), f)
+
     print("Training set shape after preprocessing:", training_set_df.shape)
     print("Testing set shape after preprocessing:", testing_set_df.shape)
 
@@ -133,7 +136,7 @@ if __name__ == "__main__":
 
     # Attach "date" to X_train for cross validation.
     useless_features_lst = ["wm_yr_wk", "quarter", "id", "demand"]
-    y_train = training_set_df["demand"].reset_index(drop = True)
+    y_train = target_sr.reset_index(drop = True)
     training_set_df.drop(useless_features_lst, axis = 1, inplace = True)
     testing_set_df.drop(["date"] + useless_features_lst, axis = 1, inplace = True)
     X_train = training_set_df.reset_index(drop = True)
@@ -209,4 +212,10 @@ if __name__ == "__main__":
     # [1481]  train's rmse: 2.07964   valid's rmse: 2.2132
     # [1142]  train's rmse: 2.10411   valid's rmse: 2.14399
     # [965]   train's rmse: 2.11633   valid's rmse: 2.13404
-    # Public LB score: 0.62222 - File: submission_kaggle_19032020_LB_0.62369.csv
+    # Public LB score: 0.62369 - File: submission_kaggle_19032020_LB_0.62369.csv
+
+    # 21/03:
+    # [939]   train's rmse: 2.1221    valid's rmse: 2.22015
+    # [1260]  train's rmse: 2.09468   valid's rmse: 2.14285
+    # [970]   train's rmse: 2.11698   valid's rmse: 2.13183
+    # Public LB score: 0.62369 - File: submission_kaggle_21032020_LB_0.62338.csv
