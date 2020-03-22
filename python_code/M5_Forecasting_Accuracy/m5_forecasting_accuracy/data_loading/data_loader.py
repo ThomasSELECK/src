@@ -13,6 +13,7 @@
 # Version: 1.0.0                                                              #
 ###############################################################################
 
+import pickle
 import time
 import gc
 import numpy as np
@@ -231,18 +232,19 @@ class DataLoader():
         del calendar_df, sell_prices_df
         gc.collect()
                      
+        # Save target
         target_sr = training_set_df["demand"]
 
+        # Shift date column to avoid leakage
         tmp_df = pd.concat([training_set_df[["id", "date", "demand"]], testing_set_df[["id", "date", "demand"]]], axis = 0).reset_index(drop = True)
         tmp_df["shifted_demand"] = tmp_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28))
         training_set_df = training_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
         testing_set_df = testing_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
 
-        # Need to drop first rows (where shifted_demand is null) ?
-
-        """training_set_df.drop("demand", axis = 1, inplace = True)
-        testing_set_df.drop("demand", axis = 1, inplace = True)"""
-                  
+        # Need to drop first rows (where shifted_demand is null)
+        target_sr = target_sr.loc[~training_set_df["shifted_demand"].isnull()]
+        training_set_df = training_set_df.loc[~training_set_df["shifted_demand"].isnull()]
+                          
         """
         # Generate a validation set if enable_validation is True
         if enable_validation:

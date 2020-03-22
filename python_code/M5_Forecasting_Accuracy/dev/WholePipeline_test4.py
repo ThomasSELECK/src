@@ -106,7 +106,7 @@ if __name__ == "__main__":
     #categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v3.pkl", "wb") as f:
-        pickle.dump((training_set_df, testing_set_df, sample_submission_df), f)
+        pickle.dump((training_set_df, target_sr, testing_set_df, sample_submission_df), f)
 
     """categorical_columns_to_be_encoded_lst = ["item_id", "dept_id", "dept_id", "store_id", "store_id", 
                                              "cat_id", "cat_id", "state_id", "state_id", "event_name_1", 
@@ -218,4 +218,10 @@ if __name__ == "__main__":
     # [939]   train's rmse: 2.1221    valid's rmse: 2.22015
     # [1260]  train's rmse: 2.09468   valid's rmse: 2.14285
     # [970]   train's rmse: 2.11698   valid's rmse: 2.13183
-    # Public LB score: 0.62369 - File: submission_kaggle_21032020_LB_0.62338.csv
+    # Public LB score: 0.62338 - File: submission_kaggle_21032020_LB_0.62338.csv
+
+    # 22/03:
+    # [1145]  train's rmse: 2.10359   valid's rmse: 2.22309
+    # [1998]  train's rmse: 2.0497    valid's rmse: 2.13933
+    # [915]   train's rmse: 2.12153   valid's rmse: 2.13127
+    # Public LB score: 0.62285 - File: submission_kaggle_22032020_LB_0.62285.csv
