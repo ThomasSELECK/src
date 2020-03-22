@@ -84,7 +84,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_21032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_22032020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     DAYS_PRED = sample_submission_df.shape[1] - 1  # 28
 
     # Attach "date" to X_train for cross validation.
-    useless_features_lst = ["wm_yr_wk", "quarter", "id", "demand"]
+    useless_features_lst = ["wm_yr_wk", "quarter", "id", "demand", "shifted_demand"]
     y_train = target_sr.reset_index(drop = True)
     training_set_df.drop(useless_features_lst, axis = 1, inplace = True)
     testing_set_df.drop(["date"] + useless_features_lst, axis = 1, inplace = True)

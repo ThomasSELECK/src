@@ -44,25 +44,14 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         None
         """
 
-        self.test_days = test_days
+        self.test_days = 0 #test_days
         self.dt_col = dt_col
         self.keep_last_train_days = keep_last_train_days # Number of rows at the end of the train set to keep for appending at the beginning of predict data
         self._last_train_rows = None
         self._orig_earliest_date = None
         self._is_train_data = False # Whether we are processing train data
         self._cols_dtype_dict = None
-
-        self.features = [
-            "item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2", "snap_CA", "snap_TX", "snap_WI", "sell_price",
-            # demand features.
-            "shift_t28", "shift_t29", "shift_t30", "rolling_std_t7", "rolling_std_t30", "rolling_std_t60", "rolling_std_t90", "rolling_std_t180", "rolling_mean_t7", "rolling_mean_t30",
-            "rolling_mean_t60", "rolling_mean_t90", "rolling_mean_t180", "rolling_skew_t30", "rolling_kurt_t30", 
-            # price features
-            "price_change_t1", "price_change_t365", "rolling_price_std_t7", "rolling_price_std_t30", 
-            # time features.
-            "year", "month", "week", "day", "dayofweek", "is_year_end", "is_year_start", "is_quarter_end", "is_quarter_start", "is_month_end", "is_month_start", "is_weekend"
-        ]
-                                          
+                                                  
     def fit(self, X, y):
         """
         This method is called to fit the transformer on the training data.
@@ -115,17 +104,17 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
                 
         # Rolling demand features # WARNING: shift MUST be at least 28 days to avoid leakage!!!
         for diff in [0, 1, 2]:
-            shift = self.test_days + diff
-            X[f"shift_t{shift}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(shift))
+            shift = diff
+            X[f"shift_t{shift}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.shift(shift))
             
         for size in [7, 30, 60, 90, 180]:
-            X[f"rolling_std_t{size}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(size).std())
+            X[f"rolling_std_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).std())
             
         for size in [7, 30, 60, 90, 180]:
-            X[f"rolling_mean_t{size}"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(size).mean())
+            X[f"rolling_mean_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).mean())
             
-        X["rolling_skew_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(30).skew())
-        X["rolling_kurt_t30"] = X.groupby(["id"])["demand"].transform(lambda x: x.shift(self.test_days).rolling(30).kurt())
+        X["rolling_skew_t30"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(30).skew())
+        X["rolling_kurt_t30"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(30).kurt())
         
         # Price features
         X["shift_price_t1"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))

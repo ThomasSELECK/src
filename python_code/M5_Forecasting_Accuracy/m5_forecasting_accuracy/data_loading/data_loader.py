@@ -158,24 +158,10 @@ class DataLoader():
 
         sample_submission_df = pd.read_csv(sample_submission_data_path_str)
         sample_submission_df = self.reduce_mem_usage(sample_submission_df, "sample_submission_df")
-        
-        print("calendar_df shape:", calendar_df.shape)
-        print("sell_prices_df shape:", sell_prices_df.shape)
-        print("sales_train_validation_df shape:", sales_train_validation_df.shape)
-        print("sample_submission_df shape:", sample_submission_df.shape)
-
-        # calendar shape: (1969, 14)
-        # sell_prices shape: (6841121, 4)
-        # sales_train_val shape: (30490, 1919)
-        # submission shape: (60980, 29)
-        
+                
         print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
 
         # Create some features on calendar
-        #calendar_df["is_Christmas"] = (calendar_df["event_name_1"] == "Christmas").astype(np.int8)
-        #calendar_df["is_Thanksgiving"] = (calendar_df["event_name_1"] == "Thanksgiving").astype(np.int8)
-        #calendar_df["all_Easter"] = (calendar_df["event_name_1"] == "Easter").astype(np.int8) + (calendar_df["event_name_1"] == "OrthodoxEaster").astype(np.int8)
-
         calendar_df = self._encode_categorical(calendar_df, ["event_name_1", "event_type_1", "event_name_2", "event_type_2"])
         calendar_df = self.reduce_mem_usage(calendar_df, "calendar_df")
 
@@ -218,14 +204,9 @@ class DataLoader():
 
         training_set_df = sales_train_validation_df
         testing_set_df = pd.concat([vals, evals], axis = 0)
-
-        #del sales_train_validation_df, vals, evals
-        #gc.collect()
-
+        
         # get only a sample for fst training
         training_set_df["d2"] = training_set_df["d"].str.replace("d_", "").apply(lambda x: int(x))
-        #nrows = 27500000
-        #training_set_df = training_set_df.loc[nrows:]
         training_set_df = training_set_df.loc[training_set_df["d2"] >= 815]
         training_set_df.drop("d2", axis = 1, inplace = True)
 
@@ -251,6 +232,14 @@ class DataLoader():
         gc.collect()
                      
         target_sr = training_set_df["demand"]
+
+        tmp_df = pd.concat([training_set_df[["id", "date", "demand"]], testing_set_df[["id", "date", "demand"]]], axis = 0).reset_index(drop = True)
+        tmp_df["shifted_demand"] = tmp_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28))
+        training_set_df = training_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
+        testing_set_df = testing_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
+
+        # Need to drop first rows (where shifted_demand is null) ?
+
         """training_set_df.drop("demand", axis = 1, inplace = True)
         testing_set_df.drop("demand", axis = 1, inplace = True)"""
                   
