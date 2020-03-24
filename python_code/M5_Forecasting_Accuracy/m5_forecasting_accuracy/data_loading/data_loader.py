@@ -207,9 +207,9 @@ class DataLoader():
         testing_set_df = pd.concat([vals, evals], axis = 0)
         
         # get only a sample for fst training
-        training_set_df["d2"] = training_set_df["d"].str.replace("d_", "").apply(lambda x: int(x))
-        training_set_df = training_set_df.loc[training_set_df["d2"] >= 815]
-        training_set_df.drop("d2", axis = 1, inplace = True)
+        """training_set_df["d2"] = training_set_df["d"].str.replace("d_", "").apply(lambda x: int(x))
+        training_set_df = training_set_df.loc[training_set_df["d2"] >= 815] # 1183
+        training_set_df.drop("d2", axis = 1, inplace = True)"""
 
         # delete evaluation for now.
         testing_set_df = testing_set_df[testing_set_df["part"] != "evaluation"]
@@ -244,6 +244,29 @@ class DataLoader():
         # Need to drop first rows (where shifted_demand is null)
         target_sr = target_sr.loc[~training_set_df["shifted_demand"].isnull()]
         training_set_df = training_set_df.loc[~training_set_df["shifted_demand"].isnull()]
+
+        # Remove outliers
+        """means = training_set_df[["id", "demand"]].groupby("id").mean()
+        stds = training_set_df[["id", "demand"]].groupby("id").std()
+        maxs = training_set_df[["id", "demand"]].groupby("id").max()
+        means.reset_index(inplace = True)
+        stds.reset_index(inplace = True)
+        maxs.reset_index(inplace = True)
+        means.columns = ["id", "demand_mean"]
+        stds.columns = ["id", "demand_std"]
+        maxs.columns = ["id", "demand_max"]
+        df = means.merge(stds, how = "left", on = "id").merge(maxs, how = "left", on = "id")
+        df["new_max"] = df["demand_mean"] + 4 * df["demand_std"]
+        df["new_max"] = df["new_max"].apply(lambda x: np.max([2, x]))
+        training_set_df = training_set_df.merge(df[["id", "new_max"]], how = "left", on = "id")
+        print("Removed", training_set_df["new_max"].loc[training_set_df["demand"] > training_set_df["new_max"]].shape[0], "outliers.")
+        training_set_df["demand"].loc[training_set_df["demand"] > training_set_df["new_max"]] = training_set_df["new_max"].loc[training_set_df["demand"] > training_set_df["new_max"]]
+        training_set_df.drop("new_max", axis = 1, inplace = True)"""
+
+        # Remove rows where target is zero ?
+
+        # Some products have constant demand equal to zero:
+        ## FOODS_2_394_TX_3_validation
                           
         """
         # Generate a validation set if enable_validation is True

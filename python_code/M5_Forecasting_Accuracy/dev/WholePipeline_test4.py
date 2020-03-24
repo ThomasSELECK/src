@@ -84,7 +84,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_22032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_24032020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -147,6 +147,22 @@ if __name__ == "__main__":
     bst_params = {
         "boosting_type": "gbdt",
         "metric": "rmse",
+        "objective": "poisson",
+        "n_jobs": -1,
+        "seed": 20,
+        "learning_rate": 0.05,
+        "bagging_fraction": 0.66,
+        "bagging_freq": 2,
+        "colsample_bytree": 0.77,
+        "max_depth": -1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.1,
+        "verbosity": -1
+    }
+
+    """bst_params = {
+        "boosting_type": "gbdt",
+        "metric": "rmse",
         "objective": "regression",
         "n_jobs": -1,
         "seed": 42,
@@ -158,11 +174,11 @@ if __name__ == "__main__":
         "reg_alpha": 0.1,
         "reg_lambda": 0.1,
         "verbosity": -1
-    }
+    }"""
 
     fit_params = {
         "num_boost_round": 10000,
-        "early_stopping_rounds": 100,
+        "early_stopping_rounds": 200,
         "verbose_eval": 100,
     }
 
@@ -225,3 +241,32 @@ if __name__ == "__main__":
     # [1998]  train's rmse: 2.0497    valid's rmse: 2.13933
     # [915]   train's rmse: 2.12153   valid's rmse: 2.13127
     # Public LB score: 0.62285 - File: submission_kaggle_22032020_LB_0.62285.csv
+
+    # 24/03:
+    # [1214]  train's rmse: 2.16541   valid's rmse: 2.25236
+    # [859]   train's rmse: 2.19513   valid's rmse: 2.16627
+    # [1726]  train's rmse: 2.12953   valid's rmse: 2.14768
+    # Public LB score: 0.59706 - File: submission_kaggle_24032020_LB_0.59706.csv
+
+    """
+    def max_consecutive_ones(a):
+        a_ext = np.concatenate(( [0], a, [0] ))
+        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
+        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
+        return a_ext.cumsum()[1:-1].max()
+
+    def max_consecutive_ones_at_end(a):
+        a_ext = np.concatenate(( [0], a, [0] ))
+        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
+        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
+        a_cum = a_ext.cumsum()
+        return int(a_cum[1:-1].max() == a_cum[-2])
+
+    tmp = X[["id", "demand"]]
+    tmp["demand"] = tmp["demand"].apply(lambda x: int(x == 0))
+    tmp2 = tmp.groupby(["id"])["demand"].apply(max_consecutive_ones).reset_index()
+    tmp3 = tmp.groupby(["id"])["demand"].apply(max_consecutive_ones_at_end).reset_index()
+    tmp2 = tmp2.merge(tmp3, how = "left", on = "id")
+    tmp2.columns = ["id", "max_consecutive_zeros", "max_consecutive_zeros_at_end"]
+    tmp2.sort_values(["max_consecutive_zeros_at_end", "max_consecutive_zeros"], ascending = False).to_excel("E:/contiguous_zeros.xlsx", index = False)
+    """

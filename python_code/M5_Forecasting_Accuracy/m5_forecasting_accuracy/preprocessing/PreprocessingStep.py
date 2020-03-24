@@ -103,8 +103,7 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
             X = pd.concat([self._last_train_rows, X], axis = 0).reset_index(drop = True)
                 
         # Rolling demand features # WARNING: shift MUST be at least 28 days to avoid leakage!!!
-        for diff in [0, 1, 2]:
-            shift = diff
+        for shift in [0, 1, 2]:
             X[f"shift_t{shift}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.shift(shift))
             
         for size in [7, 30, 60, 90, 180]:
@@ -136,7 +135,26 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
             X[attr] = getattr(X[self.dt_col].dt, attr).astype(dtype)
 
         X["is_weekend"] = X["dayofweek"].isin([5, 6]).astype(np.int8)
-           
+                
+        ### New features
+        """for size in [7, 30]:
+            X[f"rolling_sum_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
+            X[f"store_rolling_sum_t{size}"] = X.groupby(["store_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
+            X[f"cat_rolling_sum_t{size}"] = X.groupby(["cat_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
+            
+        X["monthly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("M"))["demand"].cumsum()
+        X["weekly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("W"))["demand"].cumsum()
+
+        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("M")])["demand"].cumsum()
+        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("W")])["demand"].cumsum()
+
+        tmp = X[["id", "shifted_demand"]]
+        tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
+
+        for size in [7, 30]:
+            X[f"nb_zeros_rolling_t{size}"] = tmp.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())"""
+        ###
+        
         if self._last_train_rows is not None and not self._is_train_data:
             X = X.loc[pd.to_datetime(X["date"]) >= self._orig_earliest_date]
 
