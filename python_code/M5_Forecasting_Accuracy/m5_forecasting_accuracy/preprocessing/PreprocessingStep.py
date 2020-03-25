@@ -51,6 +51,19 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         self._orig_earliest_date = None
         self._is_train_data = False # Whether we are processing train data
         self._cols_dtype_dict = None
+
+    def _max_consecutive_nonzero(self, x):
+        a_ext = np.concatenate(( [0], x, [0] ))
+        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
+        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
+        return a_ext.cumsum()[1:-1].max()
+
+    def _max_consecutive_nonzero_at_end(self, x):
+        a_ext = np.concatenate(( [0], x, [0] ))
+        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
+        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
+        a_cum = a_ext.cumsum()
+        return int(a_cum[1:-1].max() == a_cum[-2])
                                                   
     def fit(self, X, y):
         """
@@ -137,24 +150,48 @@ class PreprocessingStep(BaseEstimator, TransformerMixin):
         X["is_weekend"] = X["dayofweek"].isin([5, 6]).astype(np.int8)
                 
         ### New features
-        """for size in [7, 30]:
-            X[f"rolling_sum_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
+        """
+        for size in [7, 30]:
             X[f"store_rolling_sum_t{size}"] = X.groupby(["store_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
             X[f"cat_rolling_sum_t{size}"] = X.groupby(["cat_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
             
-        X["monthly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("M"))["demand"].cumsum()
-        X["weekly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("W"))["demand"].cumsum()
-
-        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("M")])["demand"].cumsum()
-        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("W")])["demand"].cumsum()
+        X["monthly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("M"))["shifted_demand"].cumsum()
+        X["weekly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("W"))["shifted_demand"].cumsum()
 
         tmp = X[["id", "shifted_demand"]]
         tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
 
         for size in [7, 30]:
-            X[f"nb_zeros_rolling_t{size}"] = tmp.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())"""
-        ###
-        
+            X[f"nb_zeros_rolling_t{size}"] = tmp.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
+
+        # Bin sell_price
+        X["binned_sell_price"] = 0
+        X["binned_sell_price"].loc[X["sell_price"] <= 0.80] = 6
+        X["binned_sell_price"].loc[(X["sell_price"] > 0.80) & (X["sell_price"] <= 1)] = 5
+        X["binned_sell_price"].loc[(X["sell_price"] > 1) & (X["sell_price"] <= 10)] = 4
+        X["binned_sell_price"].loc[(X["sell_price"] > 10) & (X["sell_price"] <= 20)] = 2
+        X["binned_sell_price"].loc[(X["sell_price"] > 20) & (X["sell_price"] <= 40)] = 3
+        X["binned_sell_price"].loc[X["sell_price"] > 40] = 1
+
+        """
+
+        for size in [7, 30]:
+            X[f"rolling_sum_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
+
+        X["monthly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
+        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
+
+        # Max consecutive zeros length
+        tmp = X[["id", "shifted_demand"]]
+        tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
+        tmp2 = tmp.groupby(["id"])["shifted_demand"].apply(self._max_consecutive_nonzero).reset_index()
+        tmp3 = tmp.groupby(["id"])["shifted_demand"].apply(self._max_consecutive_nonzero_at_end).reset_index()
+        tmp2 = tmp2.merge(tmp3, how = "left", on = "id")
+        tmp2.columns = ["id", "max_consecutive_zeros", "max_consecutive_zeros_at_end"]
+        X = X.merge(tmp2, how = "left", on = "id")
+
+        X.drop(["is_quarter_start", "event_type_2", "is_month_end", "is_quarter_end", "event_name_2", "is_year_start", "max_consecutive_zeros_at_end"], axis = 1, inplace = True)
+                
         if self._last_train_rows is not None and not self._is_train_data:
             X = X.loc[pd.to_datetime(X["date"]) >= self._orig_earliest_date]
 

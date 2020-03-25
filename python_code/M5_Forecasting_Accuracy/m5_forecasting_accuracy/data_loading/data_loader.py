@@ -21,6 +21,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
+from m5_forecasting_accuracy.preprocessing.categorical_encoders import TargetAvgEncoder
+
 class DataLoader():
     """
     This class is used to load the project's data.

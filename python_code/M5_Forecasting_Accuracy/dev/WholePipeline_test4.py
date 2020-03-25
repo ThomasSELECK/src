@@ -84,7 +84,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_24032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_25032020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -150,7 +150,7 @@ if __name__ == "__main__":
         "objective": "poisson",
         "n_jobs": -1,
         "seed": 20,
-        "learning_rate": 0.05,
+        "learning_rate": 0.025,
         "bagging_fraction": 0.66,
         "bagging_freq": 2,
         "colsample_bytree": 0.77,
@@ -159,22 +159,6 @@ if __name__ == "__main__":
         "reg_lambda": 0.1,
         "verbosity": -1
     }
-
-    """bst_params = {
-        "boosting_type": "gbdt",
-        "metric": "rmse",
-        "objective": "regression",
-        "n_jobs": -1,
-        "seed": 42,
-        "learning_rate": 0.05,
-        "bagging_fraction": 0.75,
-        "bagging_freq": 10,
-        "colsample_bytree": 0.55,
-        "max_depth": -1,
-        "reg_alpha": 0.1,
-        "reg_lambda": 0.1,
-        "verbosity": -1
-    }"""
 
     fit_params = {
         "num_boost_round": 10000,
@@ -247,6 +231,13 @@ if __name__ == "__main__":
     # [859]   train's rmse: 2.19513   valid's rmse: 2.16627
     # [1726]  train's rmse: 2.12953   valid's rmse: 2.14768
     # Public LB score: 0.59706 - File: submission_kaggle_24032020_LB_0.59706.csv
+
+    # 25/03:
+    # [1179]  train's rmse: 2.22252   valid's rmse: 2.22984
+    # [2674]  train's rmse: 2.14329   valid's rmse: 2.16277
+    # [1554]  train's rmse: 2.19111   valid's rmse: 2.14433
+    # Public LB score: 0.57104 - File: submission_kaggle_25032020_LB_0.57104.csv
+
 
     """
     def max_consecutive_ones(a):
