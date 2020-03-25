@@ -102,8 +102,8 @@ if __name__ == "__main__":
     print("Training set shape:", training_set_df.shape)
     print("Testing set shape:", testing_set_df.shape)
 
-    #categorical_columns_to_be_encoded_lst = ["item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2"]
-    #categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
+    categorical_columns_to_be_encoded_lst = ["dept_id", "cat_id", "store_id", "state_id"]#["item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2"]
+    categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]#, OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v3.pkl", "wb") as f:
         pickle.dump((training_set_df, target_sr, testing_set_df, sample_submission_df), f)
@@ -116,12 +116,12 @@ if __name__ == "__main__":
                                 LabelBinarizer(), TargetAvgEncoder(), LabelBinarizer(), TargetAvgEncoder(), LabelBinarizer(), 
                                 LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), TargetAvgEncoder()]"""
     
-    """cat_enc = CategoricalFeaturesEncoder(categorical_columns_to_be_encoded_lst, categorical_encoders_lst)
-    training_set_df = cat_enc.fit_transform(training_set_df, training_set_df["demand"]) # y is not used here; think to generate y_lag using shifts
-    testing_set_df = cat_enc.transform(testing_set_df)"""
+    cat_enc = CategoricalFeaturesEncoder(categorical_columns_to_be_encoded_lst, categorical_encoders_lst)
+    training_set_df = cat_enc.fit_transform(training_set_df, target_sr) # y is not used here; think to generate y_lag using shifts
+    testing_set_df = cat_enc.transform(testing_set_df)
     
     prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 366) # 366 = shift + max rolling (365)
-    training_set_df = prp.fit_transform(training_set_df, training_set_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    training_set_df = prp.fit_transform(training_set_df, target_sr) # y is not used here; think to generate y_lag using shifts
     testing_set_df = prp.transform(testing_set_df)
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v3.pkl", "wb") as f:
@@ -237,6 +237,12 @@ if __name__ == "__main__":
     # [2674]  train's rmse: 2.14329   valid's rmse: 2.16277
     # [1554]  train's rmse: 2.19111   valid's rmse: 2.14433
     # Public LB score: 0.57104 - File: submission_kaggle_25032020_LB_0.57104.csv
+
+    # 25/03:
+    # [1443]  train's rmse: 2.2042    valid's rmse: 2.22475
+    # [4187]  train's rmse: 2.0997    valid's rmse: 2.15633
+    # [4672]  train's rmse: 2.08887   valid's rmse: 2.13024
+    # Public LB score: 0.55862 - File: submission_kaggle_25032020_LB_0.55862.csv
 
 
     """
