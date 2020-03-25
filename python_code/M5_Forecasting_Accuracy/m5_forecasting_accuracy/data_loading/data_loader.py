@@ -168,10 +168,10 @@ class DataLoader():
         calendar_df = self._encode_categorical(calendar_df, ["event_name_1", "event_type_1", "event_name_2", "event_type_2"])
         calendar_df = self.reduce_mem_usage(calendar_df, "calendar_df")
 
-        sales_train_validation_df = self._encode_categorical(sales_train_validation_df, ["item_id", "dept_id", "cat_id", "store_id", "state_id"],)
+        sales_train_validation_df = self._encode_categorical(sales_train_validation_df, ["item_id"],)
         sales_train_validation_df = self.reduce_mem_usage(sales_train_validation_df, "sales_train_validation_df")
 
-        sell_prices_df = self._encode_categorical(sell_prices_df, ["item_id", "store_id"])
+        sell_prices_df = self._encode_categorical(sell_prices_df, ["item_id"])
         sell_prices_df = self.reduce_mem_usage(sell_prices_df, "sell_prices_df")
         
         # Get products table

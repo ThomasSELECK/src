@@ -102,8 +102,8 @@ if __name__ == "__main__":
     print("Training set shape:", training_set_df.shape)
     print("Testing set shape:", testing_set_df.shape)
 
-    categorical_columns_to_be_encoded_lst = ["dept_id", "cat_id", "store_id", "state_id"]#["item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2"]
-    categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]#, OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
+    categorical_columns_to_be_encoded_lst = ["dept_id", "cat_id", "store_id", "state_id"] #["item_id", "dept_id", "cat_id", "store_id", "state_id", "event_name_1", "event_type_1", "event_name_2", "event_type_2"]
+    categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()] #, OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v3.pkl", "wb") as f:
         pickle.dump((training_set_df, target_sr, testing_set_df, sample_submission_df), f)
