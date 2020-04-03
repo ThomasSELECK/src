@@ -25,7 +25,11 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="dev\TuningModel_test.py" />
+    <Compile Include="dev\BacktestValidation_test.py" />
     <Compile Include="dev\WholePipeline_test4.py" />
+    <Compile Include="m5_forecasting_accuracy\models_evaluation\backtest.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="m5_forecasting_accuracy\preprocessing\ParallelGroupBy.py" />
     <Compile Include="old\WholePipeline_test3.py" />
     <Compile Include="old\WholePipeline_test2.py" />
@@ -34,10 +38,10 @@
     <Compile Include="m5_forecasting_accuracy\data_loading\__init__.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="m5_forecasting_accuracy\metrics\wrmsse_metric.py">
+    <Compile Include="m5_forecasting_accuracy\models_evaluation\wrmsse_metric.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="m5_forecasting_accuracy\metrics\__init__.py">
+    <Compile Include="m5_forecasting_accuracy\models_evaluation\__init__.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="m5_forecasting_accuracy\models\lightgbm_wrapper.py" />
@@ -66,7 +70,7 @@
     <Folder Include="dev\" />
     <Folder Include="m5_forecasting_accuracy\" />
     <Folder Include="m5_forecasting_accuracy\data_loading\" />
-    <Folder Include="m5_forecasting_accuracy\metrics\" />
+    <Folder Include="m5_forecasting_accuracy\models_evaluation\" />
     <Folder Include="m5_forecasting_accuracy\models\" />
     <Folder Include="m5_forecasting_accuracy\model_utils\" />
     <Folder Include="m5_forecasting_accuracy\preprocessing\" />

@@ -109,15 +109,7 @@ class DataLoader():
             df[col] = pd.Series(le.fit_transform(not_null), index=not_null.index)
 
         return df
-       
-    def _merge_calendar(data, calendar):
-        calendar = calendar.drop(["weekday", "wday", "month", "year"], axis=1)
-        return data.merge(calendar, how="left", on="d").drop("d", axis=1)
-
-
-    def _merge_sell_prices(data, sell_prices):
-        return data.merge(sell_prices, how="left", on=["store_id", "item_id", "wm_yr_wk"])
-    
+           
     def load_data(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True):
         """
         This function is a wrapper for the loading of the data.
@@ -164,23 +156,21 @@ class DataLoader():
                 
         print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
 
-        # Create some features on calendar
+        # Encode some categorical features
         calendar_df = self._encode_categorical(calendar_df, ["event_name_1", "event_type_1", "event_name_2", "event_type_2"])
-        calendar_df = self.reduce_mem_usage(calendar_df, "calendar_df")
-
-        sales_train_validation_df = self._encode_categorical(sales_train_validation_df, ["item_id"],)
-        sales_train_validation_df = self.reduce_mem_usage(sales_train_validation_df, "sales_train_validation_df")
-
-        sell_prices_df = self._encode_categorical(sell_prices_df, ["item_id"])
-        sell_prices_df = self.reduce_mem_usage(sell_prices_df, "sell_prices_df")
         
+        item_id_le = LabelEncoder()
+        not_null = sales_train_validation_df["item_id"][sales_train_validation_df["item_id"].notnull()]
+        sales_train_validation_df["item_id"] = pd.Series(item_id_le.fit_transform(not_null), index = not_null.index)
+        not_null = sell_prices_df["item_id"][sell_prices_df["item_id"].notnull()]
+        sell_prices_df["item_id"] = pd.Series(item_id_le.transform(not_null), index = not_null.index)
+
         # Get products table
         id_columns = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"]
         products_df = sales_train_validation_df[id_columns]
 
         # Melt sales data: each column "d_[0-9]+" give the sales amount for the day "[0-9]+". So, we convert the data to get one line per day instead of one column.
         sales_train_validation_df = sales_train_validation_df.melt(id_vars = id_columns, var_name = "d", value_name = "demand")
-        sales_train_validation_df = self.reduce_mem_usage(sales_train_validation_df, "sales_train_validation_df")
 
         # Seperate test dataframes
         vals = sample_submission_df[sample_submission_df["id"].str.endswith("validation")]
@@ -226,26 +216,24 @@ class DataLoader():
         # Merge sell prices data
         training_set_df = training_set_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
         testing_set_df = testing_set_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
-
-        # Reduce memory usage
-        training_set_df = self.reduce_mem_usage(training_set_df, "training_set_df")
-        testing_set_df = self.reduce_mem_usage(testing_set_df, "testing_set_df")
-
-        del calendar_df, sell_prices_df
-        gc.collect()
                      
-        # Save target
-        target_sr = training_set_df["demand"]
-
         # Shift date column to avoid leakage
-        tmp_df = pd.concat([training_set_df[["id", "date", "demand"]], testing_set_df[["id", "date", "demand"]]], axis = 0).reset_index(drop = True)
+        tmp_df = pd.concat([training_set_df[["id", "date", "demand"]], testing_set_df[["id", "date", "demand"]]], axis = 0, ignore_index = True).reset_index(drop = True)
         tmp_df["shifted_demand"] = tmp_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28))
         training_set_df = training_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
         testing_set_df = testing_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
 
         # Need to drop first rows (where shifted_demand is null)
-        target_sr = target_sr.loc[~training_set_df["shifted_demand"].isnull()]
         training_set_df = training_set_df.loc[~training_set_df["shifted_demand"].isnull()]
+        training_set_df["shifted_demand"] = training_set_df["shifted_demand"].astype(np.int32)
+
+        # Reduce memory usage
+        training_set_df = self.reduce_mem_usage(training_set_df, "training_set_df")
+        for col in testing_set_df.columns.tolist():
+            testing_set_df[col] = testing_set_df[col].astype(training_set_df[col].dtype)
+
+        del calendar_df, sell_prices_df
+        gc.collect()
 
         # Remove outliers
         """means = training_set_df[["id", "demand"]].groupby("id").mean()
@@ -270,36 +258,28 @@ class DataLoader():
         # Some products have constant demand equal to zero:
         ## FOODS_2_394_TX_3_validation
                           
-        """
         # Generate a validation set if enable_validation is True
         if enable_validation:
             print("Generating validation set...")
-            test_size_ratio = 0.2
+            
+            # Split data on 'date' feature
+            testing_set_df = training_set_df.loc[pd.to_datetime(training_set_df["date"]) > train_test_date_split].reset_index(drop = True)
+            training_set_df = training_set_df.loc[pd.to_datetime(training_set_df["date"]) <= train_test_date_split].reset_index(drop = True)
 
-            # Split data on 'RescuerID' feature as this feature is not overlapping train and test
-            unique_rescuer_ids_npa = training_set_df["RescuerID"].unique()
-            train_rescuer_ids_npa, test_rescuer_ids_npa = train_test_split(unique_rescuer_ids_npa, test_size = test_size_ratio, random_state = 2019)
-
-            testing_set_df = training_set_df.loc[training_set_df["RescuerID"].isin(test_rescuer_ids_npa)]
-            training_set_df = training_set_df.loc[training_set_df["RescuerID"].isin(train_rescuer_ids_npa)]
-    
-            # Extract truth / target
-            truth_sr = testing_set_df[target_name_str]
-            testing_set_df = testing_set_df.drop(target_name_str, axis = 1)
-
-            # Reindex DataFrames
-            training_set_df = training_set_df.reset_index(drop = True)
-            testing_set_df = testing_set_df.reset_index(drop = True)
-            truth_sr = truth_sr.reset_index(drop = True)
-
+            # Save target
+            target_df = training_set_df[["id", "date", "demand"]]
+            truth_df = testing_set_df[["id", "date", "demand"]]
+                        
             print("Generating validation set... done")
         else:
-            truth_sr = None
+            # Save target
+            target_df = training_set_df[["id", "date", "demand"]]
+            truth_df = None
 
-        # Extract target for training set
-        target_sr = training_set_df[target_name_str]
-        training_set_df = training_set_df.drop(target_name_str, axis = 1)"""
+        # Remove truth from data
+        training_set_df.drop("demand", axis = 1, inplace = True)
+        testing_set_df.drop("demand", axis = 1, inplace = True)
 
         print("Loading data... done")
 
-        return training_set_df, target_sr, testing_set_df, sample_submission_df
+        return training_set_df, target_df, testing_set_df, truth_df, sample_submission_df

@@ -39,6 +39,7 @@ from m5_forecasting_accuracy.models.lightgbm_wrapper import LGBMRegressor
 from m5_forecasting_accuracy.model_utils.CustomTimeSeriesSplitter import CustomTimeSeriesSplitter
 from m5_forecasting_accuracy.preprocessing.categorical_encoders import CategoricalFeaturesEncoder, OrdinalEncoder, GroupingEncoder, LeaveOneOutEncoder, TargetAvgEncoder
 from m5_forecasting_accuracy.models_evaluation.wrmsse_metric import WRMSSEEvaluator
+from m5_forecasting_accuracy.models_evaluation.backtest import Backtest
 
 pd.set_option("display.max_columns", 100)
 
@@ -56,6 +57,26 @@ def train_lgb(bst_params, fit_params, X, y, cv, drop_when_train=None):
         train_set = lgb.Dataset(X_trn.drop(drop_when_train, axis = 1), label = y_trn)
         val_set = lgb.Dataset(X_val.drop(drop_when_train, axis = 1), label = y_val)
 
+        """
+        X_trn["d"] = (pd.to_datetime(X_trn["date"]) - pd.to_datetime("2011-01-29")).dt.days + 1
+        X_val["d"] = (pd.to_datetime(X_val["date"]) - pd.to_datetime("2011-01-29")).dt.days + 1
+        tmp = X_trn["id"].str.split("_", expand = True)
+        X_trn["store_id"] = tmp[3].astype(str) + "_" + tmp[4]
+        X_trn["dept_id"] = tmp[0].astype(str) + "_" + tmp[1]
+        X_trn["state_id"] = tmp[3]
+        X_trn["cat_id"] = tmp[0]
+        tmp = X_val["id"].str.split("_", expand = True)
+        X_val["store_id"] = tmp[3].astype(str) + "_" + tmp[4]
+        X_val["dept_id"] = tmp[0].astype(str) + "_" + tmp[1]
+        X_val["state_id"] = tmp[3]
+        X_val["cat_id"] = tmp[0]
+        evaluator = WRMSSEEvaluator(pd.concat([X_trn, y_trn], axis = 1), pd.concat([X_val, y_val], axis = 1))
+
+        gc.collect()
+
+        print("Training...")
+        """
+
         model = lgb.train(
             bst_params,
             train_set,
@@ -71,7 +92,7 @@ def train_lgb(bst_params, fit_params, X, y, cv, drop_when_train=None):
     return models
 
 def rmse(y_true, y_pred):
-    return np.sqrt(metrics.mean_squared_error(y_true, y_pred))
+    return np.sqrt(mean_squared_error(y_true, y_pred))
 
 def make_submission(test, submission, DAYS_PRED):
     preds = test[["id", "date", "demand"]]
@@ -98,7 +119,7 @@ if __name__ == "__main__":
     enable_validation = True
 
     dl = DataLoader()
-    training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-03-27", enable_validation = enable_validation)
+    training_set_df, target_sr, testing_set_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-04-24", enable_validation = True)
 
     print("Training set shape:", training_set_df.shape)
     print("Testing set shape:", testing_set_df.shape)
@@ -107,7 +128,7 @@ if __name__ == "__main__":
     categorical_encoders_lst = [OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()] #, OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder(), OrdinalEncoder()]
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v4.pkl", "wb") as f:
-        pickle.dump((training_set_df, target_df, testing_set_df, truth_df, sample_submission_df), f)
+        pickle.dump((training_set_df, target_sr, testing_set_df, sample_submission_df), f)
 
     """categorical_columns_to_be_encoded_lst = ["item_id", "dept_id", "dept_id", "store_id", "store_id", 
                                              "cat_id", "cat_id", "state_id", "state_id", "event_name_1", 
@@ -118,15 +139,15 @@ if __name__ == "__main__":
                                 LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), TargetAvgEncoder()]"""
     
     cat_enc = CategoricalFeaturesEncoder(categorical_columns_to_be_encoded_lst, categorical_encoders_lst)
-    training_set_df = cat_enc.fit_transform(training_set_df, target_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    training_set_df = cat_enc.fit_transform(training_set_df, target_sr) # y is not used here; think to generate y_lag using shifts
     testing_set_df = cat_enc.transform(testing_set_df)
     
     prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 366) # 366 = shift + max rolling (365)
-    training_set_df = prp.fit_transform(training_set_df, target_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    training_set_df = prp.fit_transform(training_set_df, target_sr) # y is not used here; think to generate y_lag using shifts
     testing_set_df = prp.transform(testing_set_df)
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v4.pkl", "wb") as f:
-        pickle.dump((cat_enc, prp, training_set_df, testing_set_df, target_df, truth_df), f)
+        pickle.dump((cat_enc, prp, training_set_df, testing_set_df, target_sr), f)
 
     print("Training set shape after preprocessing:", training_set_df.shape)
     print("Testing set shape after preprocessing:", testing_set_df.shape)
@@ -136,8 +157,9 @@ if __name__ == "__main__":
     DAYS_PRED = sample_submission_df.shape[1] - 1  # 28
 
     # Attach "date" to X_train for cross validation.
-    useless_features_lst = ["wm_yr_wk", "quarter", "id", "shifted_demand"]
-    y_train = target_df["demand"].reset_index(drop = True)
+    useless_features_lst = ["wm_yr_wk", "quarter", "id", "demand", "shifted_demand"]
+    y_train = target_sr.reset_index(drop = True)
+    #training_set_df.drop(["wm_yr_wk", "quarter", "demand", "shifted_demand"], axis = 1, inplace = True)
     training_set_df.drop(useless_features_lst, axis = 1, inplace = True)
     testing_set_df.drop(["date"] + useless_features_lst, axis = 1, inplace = True)
     X_train = training_set_df.reset_index(drop = True)
@@ -169,6 +191,7 @@ if __name__ == "__main__":
 
     # Training models
     cv = CustomTimeSeriesSplitter(n_splits = 3, train_days = 365 * 2, test_days = DAYS_PRED, dt_col = "date")
+    #models = train_lgb(bst_params, fit_params, X_train, y_train, cv, drop_when_train = ["date", "id"])
     models = train_lgb(bst_params, fit_params, X_train, y_train, cv, drop_when_train = ["date"])
 
     del X_train, y_train
@@ -189,18 +212,7 @@ if __name__ == "__main__":
         features_names = model.feature_name()
 
     preds = preds / cv.get_n_splits()
-    preds = id_date.assign(demand = preds)
-
-    if enable_validation:
-        with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v4.pkl", "rb") as f:
-            training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = pickle.load(f)
-
-        training_set_df["demand"] = target_df["demand"]
-        testing_set_df["demand"] = truth_df["demand"]
-        e = WRMSSEEvaluator(training_set_df, testing_set_df)
-        print("Validation WRMSSE:", round(e.score(preds), 6))
-    else:
-        make_submission(preds, sample_submission_df, DAYS_PRED)
+    make_submission(id_date.assign(demand=preds), sample_submission_df, DAYS_PRED)
 
     # Feature importance
     importances = importances / cv.get_n_splits()
@@ -282,3 +294,132 @@ if __name__ == "__main__":
     tmp2.columns = ["id", "max_consecutive_zeros", "max_consecutive_zeros_at_end"]
     tmp2.sort_values(["max_consecutive_zeros_at_end", "max_consecutive_zeros"], ascending = False).to_excel("E:/contiguous_zeros.xlsx", index = False)
     """
+
+# Load data
+cal = pd.read_csv(CALENDAR_PATH_str)
+sell_prices = pd.read_csv(SELL_PRICES_PATH_str)
+stv = pd.read_csv(SALES_TRAIN_PATH_str)
+
+def lgbm_process(train_df, valid_df, models):
+    valid = valid_df.copy()
+    #train["d"] = (pd.to_datetime(train["date"]) - pd.to_datetime("2011-01-29")).dt.days + 1
+    #valid["d"] = (pd.to_datetime(valid["date"]) - pd.to_datetime("2011-01-29")).dt.days + 1
+          
+    id_date = valid[["id", "date"]].reset_index(drop = True) # keep these two columns to use later.
+    date_lst = valid["d"].unique()
+    date_lst.sort()
+    date_lst = ["d_" + str(d) for d in date_lst]
+
+    # Attach "date" to X_train for cross validation.
+    useless_features_lst = ["wm_yr_wk", "quarter", "id", "shifted_demand"] + ["all_id", "d", "store_id", "dept_id", "state_id", "cat_id"]
+    #train.drop(["demand"] + useless_features_lst, axis = 1, inplace = True)
+    valid.drop(["date"] + useless_features_lst, axis = 1, inplace = True) # "demand" is already removed by backtest
+    #X_train = train.reset_index(drop = True)
+    X_test = valid.reset_index(drop = True)
+
+    # Make predictions
+    preds = np.zeros(valid.shape[0])
+
+    features_names = []
+    for model in models:
+        preds += model.predict(X_test)
+
+    preds = preds / 3 # 3 = cv.get_n_splits()
+
+    id_date = id_date.assign(demand = preds)
+    
+    return id_date
+
+"""train = stv.melt(["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"], var_name='d', value_name='demand')
+train = train.merge(cal)
+train = train.merge(sell_prices, how = "left", on = ["item_id", "store_id", "wm_yr_wk"])
+train = add_snap_col(train)
+train["demand"] = train["demand"].apply(lambda x: int(x))
+train["d"] = train["d"].str.replace("d_", "").apply(lambda x: int(x))"""
+
+# For LGBM only
+with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v4.pkl", "rb") as f:
+    training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = pickle.load(f)
+
+with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v4.pkl", "rb") as f:
+    cat_enc, prp, training_set_df, testing_set_df, target_sr = pickle.load(f)
+
+with open("E:/M5_Forecasting_Accuracy_cache/checkpoint3_v4.pkl", "rb") as f:
+    models, cv = pickle.load(f)
+
+gc.collect()
+
+training_set_df["d"] = (pd.to_datetime(training_set_df["date"]) - pd.to_datetime("2011-01-29")).dt.days + 1
+tmp = training_set_df["id"].str.split("_", expand = True)
+training_set_df["store_id"] = tmp[3].astype(str) + "_" + tmp[4]
+training_set_df["dept_id"] = tmp[0].astype(str) + "_" + tmp[1]
+training_set_df["state_id"] = tmp[3]
+training_set_df["cat_id"] = tmp[0]
+training_set_df["demand"] = target_df["demand"]
+
+del testing_set_df, truth_df, sample_submission_df, cat_enc, prp, target_sr, cv
+
+gc.collect()
+
+backtest = Backtest(training_set_df, process_lst = [lgbm_process], process_names_lst = ["lgbm_3_avg"])
+
+# Instantiate a Backtest object with the differenct processes youd like to compare
+#backtest = Backtest(train, process_lst=[process_func, process_01, process_02, process_03, process_04], process_names_lst=['agg_28', 'agg_60', 'agg_90', 'agg_120', 'agg_150'])
+
+# Backtest all processess and time frames at once using .score_all()
+## In this case will use every 28 day period going backward 2 years
+scores_df = backtest.score_all(models, [0, 28, 56, 84, 112, 140, 168, 196, 224])#, 252, 280, 308, 336, 364, 392, 420, 448, 476, 504, 532, 560, 588, 616, 644, 672, 700, 728])
+
+# Plot the performance accross time
+scores_df.plot(figsize = (20,7))
+plt.xlabel('Validation end day', fontsize=20)
+plt.ylabel('WRMSSEE score', fontsize=20)
+plt.title('Process performance over time', fontsize=26)
+plt.show()
+
+# Read scores_df to a csv file to save your backtest information easily
+scores_df.to_csv('backtest_results_' + '_'.join(backtest.process_names) + '.csv')
+
+
+# Load data
+cal = pd.read_csv(CALENDAR_PATH_str)
+sell_prices = pd.read_csv(SELL_PRICES_PATH_str)
+ss = pd.read_csv(SAMPLE_SUBMISSION_PATH_str)
+stv = pd.read_csv(SALES_TRAIN_PATH_str)
+
+train_df = stv.melt(["id", "item_id", "dept_id", "cat_id", "store_id", "state_id"], var_name='d', value_name='demand')
+train_df = train_df.merge(cal)
+train_df = train_df.merge(sell_prices, how = "left", on = ["item_id", "store_id", "wm_yr_wk"])
+train_df["demand"] = train_df["demand"].apply(lambda x: int(x))
+train_df["d"] = train_df["d"].str.replace("d_", "").apply(lambda x: int(x))
+train_df["all_id"] = "all"
+
+train_fold_df = train_df.loc[train_df["d"] <= train_df["d"].max() - 28].reset_index(drop = True)
+valid_fold_df = train_df.loc[train_df["d"] > train_df["d"].max() - 28].reset_index(drop = True).copy()
+
+train_target_columns = ["d_" + str(c) for c in train_fold_df["d"].unique().tolist()]
+weight_columns = train_target_columns[-28:]
+
+group_ids = ("all_id", "state_id", "store_id", "cat_id", "dept_id", "item_id", 
+                 ["state_id", "cat_id"],  ["state_id", "dept_id"], ["store_id", "cat_id"], 
+                 ["store_id", "dept_id"], ["item_id", "state_id"], ["item_id", "store_id"])
+
+id_columns = ["id", "item_id", "dept_id", "cat_id", "store_id", "state_id", "all_id"]
+weight_df = train_fold_df[["item_id", "store_id", "d", "demand", "sell_price"]].loc[train_fold_df["d"] > train_fold_df["d"].max() - 28]
+weight_df["value"] = weight_df["demand"] * weight_df["sell_price"]
+weight_df = weight_df.set_index(["item_id", "store_id", "d"]).unstack(level = 2)["value"]
+tmp = train_fold_df[["item_id", "store_id"]].drop_duplicates()
+weight_df = weight_df.loc[zip(tmp["item_id"], tmp["store_id"]), :].reset_index(drop = True)
+weight_df.columns = ["d_" + str(c) for c in weight_df.columns.tolist()]
+weight_df = pd.concat([train_fold_df[id_columns].drop_duplicates(), weight_df], axis = 1, sort = False)
+weight_df["all_id"] = "all"
+
+weights_map = {}
+for i, group_id in enumerate(tqdm(group_ids, leave = False)):
+    lv_weight = weight_df.groupby(group_id)[weight_columns].sum().sum(axis = 1)
+    lv_weight = lv_weight / lv_weight.sum()
+
+    for i in range(len(lv_weight)):
+        weights_map[get_name(lv_weight.index[i])] = np.array([lv_weight.iloc[i]])
+
+weights = pd.DataFrame(weights_map).T / len(group_ids)
