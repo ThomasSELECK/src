@@ -120,7 +120,7 @@ if __name__ == "__main__":
     cat_enc = CategoricalFeaturesEncoder(categorical_columns_to_be_encoded_lst, categorical_encoders_lst)
     training_set_df = cat_enc.fit_transform(training_set_df, target_df["demand"]) # y is not used here; think to generate y_lag using shifts
     testing_set_df = cat_enc.transform(testing_set_df)
-    
+
     prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 366) # 366 = shift + max rolling (365)
     training_set_df = prp.fit_transform(training_set_df, target_df["demand"]) # y is not used here; think to generate y_lag using shifts
     testing_set_df = prp.transform(testing_set_df)
@@ -191,9 +191,15 @@ if __name__ == "__main__":
     preds = preds / cv.get_n_splits()
     preds = id_date.assign(demand = preds)
 
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v4.pkl", "wb") as f:
+        pickle.dump(preds, f)
+
     if enable_validation:
         with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v4.pkl", "rb") as f:
             training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = pickle.load(f)
+
+        with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v4.pkl", "rb") as f:
+            preds = pickle.load(f)
 
         training_set_df["demand"] = target_df["demand"]
         testing_set_df["demand"] = truth_df["demand"]
@@ -258,6 +264,8 @@ if __name__ == "__main__":
     # [4187]  train's rmse: 2.0997    valid's rmse: 2.15633
     # [4672]  train's rmse: 2.08887   valid's rmse: 2.13024
     # Public LB score: 0.55862 - File: submission_kaggle_25032020_LB_0.55862.csv
+    # Local WRMSSE: 0.558078
+
 
 
     """
