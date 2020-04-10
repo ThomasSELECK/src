@@ -21,6 +21,12 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="dev\DraftModel.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="dev\EDA_draft.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="dev\files_paths.py">
       <SubType>Code</SubType>
     </Compile>

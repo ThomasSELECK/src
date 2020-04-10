@@ -24,3 +24,6 @@ PREDICTIONS_DIRECTORY_PATH_str = "../../../predictions/"
 
 # Models weights
 PRETRAINED_MODELS_WEIGHTS_PATH_str = "../../../data/weights/"
+
+# Plots
+PLOTS_DIRECTORY_PATH_str = "../../../plots/"

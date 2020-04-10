@@ -85,7 +85,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_30032020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_06042020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     # Set the seed of numpy's PRNG
     np.random.seed(2019)
         
-    enable_validation = True
+    enable_validation = False
 
     dl = DataLoader()
     training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-03-27", enable_validation = enable_validation)
@@ -118,11 +118,11 @@ if __name__ == "__main__":
                                 LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), LabelBinarizer(), TargetAvgEncoder()]"""
     
     cat_enc = CategoricalFeaturesEncoder(categorical_columns_to_be_encoded_lst, categorical_encoders_lst)
-    training_set_df = cat_enc.fit_transform(training_set_df, target_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    training_set_df = cat_enc.fit_transform(training_set_df, target_df["demand"]) # y is not used here
     testing_set_df = cat_enc.transform(testing_set_df)
 
     prp = PreprocessingStep(test_days = 28, dt_col = "date", keep_last_train_days = 366) # 366 = shift + max rolling (365)
-    training_set_df = prp.fit_transform(training_set_df, target_df["demand"]) # y is not used here; think to generate y_lag using shifts
+    training_set_df = prp.fit_transform(training_set_df, target_df["demand"]) # y is not used here
     testing_set_df = prp.transform(testing_set_df)
 
     with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v4.pkl", "wb") as f:
@@ -191,14 +191,14 @@ if __name__ == "__main__":
     preds = preds / cv.get_n_splits()
     preds = id_date.assign(demand = preds)
 
-    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v4.pkl", "wb") as f:
+    with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v5.pkl", "wb") as f:
         pickle.dump(preds, f)
 
     if enable_validation:
         with open("E:/M5_Forecasting_Accuracy_cache/checkpoint1_v4.pkl", "rb") as f:
             training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = pickle.load(f)
 
-        with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v4.pkl", "rb") as f:
+        with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v5.pkl", "rb") as f:
             preds = pickle.load(f)
 
         training_set_df["demand"] = target_df["demand"]
@@ -265,28 +265,3 @@ if __name__ == "__main__":
     # [4672]  train's rmse: 2.08887   valid's rmse: 2.13024
     # Public LB score: 0.55862 - File: submission_kaggle_25032020_LB_0.55862.csv
     # Local WRMSSE: 0.558078
-
-
-
-    """
-    def max_consecutive_ones(a):
-        a_ext = np.concatenate(( [0], a, [0] ))
-        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
-        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
-        return a_ext.cumsum()[1:-1].max()
-
-    def max_consecutive_ones_at_end(a):
-        a_ext = np.concatenate(( [0], a, [0] ))
-        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
-        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
-        a_cum = a_ext.cumsum()
-        return int(a_cum[1:-1].max() == a_cum[-2])
-
-    tmp = X[["id", "demand"]]
-    tmp["demand"] = tmp["demand"].apply(lambda x: int(x == 0))
-    tmp2 = tmp.groupby(["id"])["demand"].apply(max_consecutive_ones).reset_index()
-    tmp3 = tmp.groupby(["id"])["demand"].apply(max_consecutive_ones_at_end).reset_index()
-    tmp2 = tmp2.merge(tmp3, how = "left", on = "id")
-    tmp2.columns = ["id", "max_consecutive_zeros", "max_consecutive_zeros_at_end"]
-    tmp2.sort_values(["max_consecutive_zeros_at_end", "max_consecutive_zeros"], ascending = False).to_excel("E:/contiguous_zeros.xlsx", index = False)
-    """

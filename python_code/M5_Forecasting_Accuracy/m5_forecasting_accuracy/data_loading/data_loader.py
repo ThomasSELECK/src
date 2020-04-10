@@ -20,6 +20,9 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from statsmodels.tsa.seasonal import STL
+import multiprocessing as mp
+from tqdm import tqdm
 
 from m5_forecasting_accuracy.preprocessing.categorical_encoders import TargetAvgEncoder
 
@@ -28,7 +31,7 @@ class DataLoader():
     This class is used to load the project's data.
     """
 
-    def __init__(self):
+    def __init__(self, n_cores = -1):
         """
         This is the class' constructor.
 
@@ -40,8 +43,11 @@ class DataLoader():
         -------
         None
         """
-
-        pass
+        
+        if n_cores == -1:
+            self.n_cores = mp.cpu_count()
+        else:
+            self.n_cores = n_cores
 
     @staticmethod
     def reduce_mem_usage(data_df, dataset_name, verbose = True):
@@ -110,6 +116,17 @@ class DataLoader():
 
         return df
            
+    @staticmethod
+    def time_series_decomposer(x):
+        id, df = x
+        result = STL(df).fit()
+        result_df = pd.concat([result.trend, result.seasonal, result.resid], axis = 1)
+        result_df.columns = ["trend", "seasonality", "residual"]
+        result_df.reset_index(inplace = True)
+        result_df["id"] = id
+
+        return result_df[["id", "date", "trend", "seasonality", "residual"]]
+
     def load_data(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True):
         """
         This function is a wrapper for the loading of the data.
@@ -216,8 +233,33 @@ class DataLoader():
         # Merge sell prices data
         training_set_df = training_set_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
         testing_set_df = testing_set_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"])
-                     
-        # Shift date column to avoid leakage
+
+        # Remove leading zero values for each product as this can mean the product was not sold at that period 
+        """product_release_df = sell_prices_df.groupby(["store_id", "item_id"])["wm_yr_wk"].min().reset_index()
+        product_release_df.columns = ["store_id", "item_id", "release"]
+        training_set_df = training_set_df.merge(product_release_df, how = "left", on = ["store_id", "item_id"])
+        training_set_df = training_set_df.loc[training_set_df["wm_yr_wk"] >= training_set_df["release"]]
+        training_set_df.drop("release", axis = 1, inplace = True)"""
+                             
+        # Decompose target into trend, seasonality and residuals
+        """st = time.time()
+        df = training_set_df[["id", "date", "demand"]]
+        df["date"] = pd.to_datetime(df["date"])
+        df.set_index("date", inplace = True)
+        chunks_lst = list(df.groupby("id")["demand"])
+        with mp.Pool(self.n_cores) as pool:
+            res = pool.map(DataLoader.time_series_decomposer, chunks_lst, chunksize = 5)
+        res = pd.concat(res, axis = 0)
+        df.reset_index(inplace = True)
+        df = df.merge(res, how = "left", on = ["id", "date"])
+        df2 = df[["id", "date", "trend"]]
+        df2.columns = ["id", "date", "demand"]
+        df2["date"] = df2["date"].dt.strftime("%Y-%m-%d")
+        training_set_df.drop("demand", axis = 1, inplace = True)
+        training_set_df = training_set_df.merge(df2, how = "left", on = ["id", "date"])
+        print("Time series decomposition:", time.time() - st, "secs")"""
+
+        # Shift demand column to avoid leakage
         tmp_df = pd.concat([training_set_df[["id", "date", "demand"]], testing_set_df[["id", "date", "demand"]]], axis = 0, ignore_index = True).reset_index(drop = True)
         tmp_df["shifted_demand"] = tmp_df.groupby(["id"])["demand"].transform(lambda x: x.shift(28))
         training_set_df = training_set_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
