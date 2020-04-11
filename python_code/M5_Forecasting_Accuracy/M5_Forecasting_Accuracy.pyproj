@@ -21,6 +21,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="dev\WholePipeline_test5.py" />
     <Compile Include="dev\DraftModel.py">
       <SubType>Code</SubType>
     </Compile>

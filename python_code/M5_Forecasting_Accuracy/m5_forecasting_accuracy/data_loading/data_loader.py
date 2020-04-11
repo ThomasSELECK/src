@@ -325,3 +325,93 @@ class DataLoader():
         print("Loading data... done")
 
         return training_set_df, target_df, testing_set_df, truth_df, sample_submission_df
+
+    def load_data_v2(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True, first_day = 1200):
+        """
+        This function is a wrapper for the loading of the data.
+
+        Parameters
+        ----------
+        training_set_path_str : string
+                A string containing the path of the training set file.
+
+        train_test_date_split : string
+                A date where the data will be splitted into training and testing sets.
+
+        enable_validation : bool (default = True)
+                Whether to split training data into training and validation data.
+            
+        Returns
+        -------
+        training_set_df : pd.DataFrame
+                A pandas DataFrame containing the training set.
+
+        testing_set_df : pd.DataFrame
+                A pandas DataFrame containing the testing set.
+        """
+
+        st = time.time()
+
+        max_lags = 57
+        tr_last = 1913
+        calendar_dtypes_dict = {"event_name_1": "category", "event_name_2": "category", "event_type_1": "category", "event_type_2": "category", "weekday": "category", "wm_yr_wk": "int16", 
+                                "wday": "int16", "month": "int16", "year": "int16", "snap_CA": "float32", "snap_TX": "float32", "snap_WI": "float32"}
+        sell_prices_dtypes_dict = {"store_id": "category", "item_id": "category", "wm_yr_wk": "int16", "sell_price": "float32"}
+
+        # Load the data
+        print("Loading the data...")
+
+        # Load train and test data
+        print("    Reading files from disk...")
+
+        # For `sales_train_validation`
+        valid_days_lst = [f"d_{day}" for day in range(first_day, tr_last + 1)]
+        id_columns_lst = ["id", "item_id", "dept_id", "store_id", "cat_id", "state_id"]
+        sales_train_validation_dtype_dict = {numcol: "float32" for numcol in valid_days_lst} 
+        sales_train_validation_dtype_dict.update({col: "category" for col in id_columns_lst if col != "id"})
+
+        calendar_df = pd.read_csv(calendar_data_path_str, dtype = calendar_dtypes_dict, parse_dates = ["date"])
+        sell_prices_df = pd.read_csv(sell_prices_data_path_str, dtype = sell_prices_dtypes_dict)
+        sales_train_validation_df = pd.read_csv(sales_train_validation_data_path_str, usecols = id_columns_lst + valid_days_lst, dtype = sales_train_validation_dtype_dict)
+                                
+        print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
+        
+        st = time.time()
+        print("    Merging datasets...")
+        # Add days for testing set
+        for day in range(tr_last + 1, tr_last + 28 + 1):
+            sales_train_validation_df[f"d_{day}"] = np.nan
+
+        sales_train_validation_df = pd.melt(sales_train_validation_df, id_vars = id_columns_lst, value_vars = [col for col in sales_train_validation_df.columns if col.startswith("d_")], var_name = "d", value_name = "sales")
+        sales_train_validation_df = sales_train_validation_df.merge(calendar_df, on = "d", copy = False)
+        sales_train_validation_df = sales_train_validation_df.merge(sell_prices_df, on = ["store_id", "item_id", "wm_yr_wk"], copy = False)
+        print("    Merging datasets... done in", round(time.time() - st, 3), "secs")
+        
+        st = time.time()
+        print("    Encoding categorical features...")
+        # Encode categorical features to integer
+        columns_to_encode_lst = [col for col in id_columns_lst if col != "id"]
+        for col, col_dtype in list(sell_prices_dtypes_dict.items()) + list(calendar_dtypes_dict.items()):
+            if col_dtype == "category":
+                columns_to_encode_lst.append(col)
+        columns_to_encode_lst = list(set(columns_to_encode_lst)) # Remove duplicates
+
+        for col in columns_to_encode_lst:
+            sales_train_validation_df[col] = sales_train_validation_df[col].cat.codes.astype("int16")
+            sales_train_validation_df[col] -= sales_train_validation_df[col].min()
+        print("    Encoding categorical features... done in", round(time.time() - st, 3), "secs")
+
+        st = time.time()
+        print("    Creating final datasets...")
+        # Create training set
+        valid_days_lst = [f"d_{day}" for day in range(first_day, tr_last + 1)]
+        training_set_df = sales_train_validation_df.loc[sales_train_validation_df["d"].isin(valid_days_lst)].reset_index(drop = True)
+
+        # Create testing set
+        valid_days_lst = [f"d_{day}" for day in range(tr_last - max_lags, tr_last + 28 + 1)]
+        testing_set_df = sales_train_validation_df.loc[sales_train_validation_df["d"].isin(valid_days_lst)].reset_index(drop = True)
+        print("    Creating final datasets... done in", round(time.time() - st, 3), "secs")
+
+        print("Loading data... done")
+
+        return training_set_df, testing_set_df
