@@ -170,8 +170,12 @@ if __name__ == "__main__":
             print(icount, day)
             tst = te[(te.date >= day - timedelta(days=max_lags)) & (te.date <= day)].copy()
             create_fea(tst)
+
+            with open("E:/tst_icount_" + str(icount) + "_tdelta_" + str(tdelta) + ".pkl", "wb") as f:
+                pickle.dump(tst, f)
+
             tst = tst.loc[tst.date == day , train_cols]
-            te.loc[te.date == day, "sales"] = alpha*m_lgb.predict(tst) # magic multiplier by kyakovlev
+            te.loc[te.date == day, "sales"] = alpha * m_lgb.predict(tst) # magic multiplier by kyakovlev
 
         te_sub = te.loc[te.date >= fday, ["id", "sales"]].copy()
         te_sub["F"] = [f"F{rank}" for rank in te_sub.groupby("id")["id"].cumcount()+1]

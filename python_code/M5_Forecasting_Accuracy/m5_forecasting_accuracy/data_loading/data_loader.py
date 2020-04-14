@@ -326,7 +326,7 @@ class DataLoader():
 
         return training_set_df, target_df, testing_set_df, truth_df, sample_submission_df
 
-    def load_data_v2(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True, first_day = 1200):
+    def load_data_v2(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True, first_day = 1200, max_lags = 57):
         """
         This function is a wrapper for the loading of the data.
 
@@ -351,9 +351,6 @@ class DataLoader():
         """
 
         st = time.time()
-
-        max_lags = 57
-        tr_last = 1913
         calendar_dtypes_dict = {"event_name_1": "category", "event_name_2": "category", "event_type_1": "category", "event_type_2": "category", "weekday": "category", "wm_yr_wk": "int16", 
                                 "wday": "int16", "month": "int16", "year": "int16", "snap_CA": "float32", "snap_TX": "float32", "snap_WI": "float32"}
         sell_prices_dtypes_dict = {"store_id": "category", "item_id": "category", "wm_yr_wk": "int16", "sell_price": "float32"}
@@ -365,6 +362,7 @@ class DataLoader():
         print("    Reading files from disk...")
 
         # For `sales_train_validation`
+        tr_last = 1913
         valid_days_lst = [f"d_{day}" for day in range(first_day, tr_last + 1)]
         id_columns_lst = ["id", "item_id", "dept_id", "store_id", "cat_id", "state_id"]
         sales_train_validation_dtype_dict = {numcol: "float32" for numcol in valid_days_lst} 
