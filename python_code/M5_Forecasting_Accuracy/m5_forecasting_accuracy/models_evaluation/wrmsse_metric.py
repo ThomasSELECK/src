@@ -77,8 +77,8 @@ class WRMSSEEvaluator(object):
         self.scale = self.get_scale()
         self.train_id_date = self.train_df[["id", "date"]].reset_index(drop = True)
         self.valid_id_date = self.valid_df[["id", "date"]].reset_index(drop = True)
-        self.train_series = None
-        self.train_df = None
+        #self.train_series = None
+        #self.train_df = None
 
         gc.collect()
 
@@ -105,7 +105,7 @@ class WRMSSEEvaluator(object):
             if len(group_id) == 1:
                 tr.index = tr[group_id[0]].astype(str)
             elif len(group_id) == 2:
-                tr.index = tr[group_id[0]].astype(str) + "--" + tr[group_id[1]]
+                tr.index = tr[group_id[0]].astype(str) + "--" + tr[group_id[1]].astype(str)
 
             tr.drop(group_id, axis = 1, inplace = True)
             tr.columns = ["d_" + str(c) for c in tr.columns]   
@@ -147,9 +147,9 @@ class WRMSSEEvaluator(object):
             lv_weight = lv_weight.reset_index()
 
             if len(group_id) == 1:
-                lv_weight.index = lv_weight[group_id[0]].astype(str)
+                lv_weight.index = lv_weight[group_id[0]].apply(lambda x: int(x) if type(x) != str else x).astype(str)
             elif len(group_id) == 2:
-                lv_weight.index = lv_weight[group_id[0]].astype(str) + "--" + lv_weight[group_id[1]]
+                lv_weight.index = lv_weight[group_id[0]].apply(lambda x: int(x) if type(x) != str else x).astype(str) + "--" + lv_weight[group_id[1]].apply(lambda x: int(x) if type(x) != str else x).astype(str)
 
             lv_weight.drop(group_id, axis = 1, inplace = True)
             lv_weight.columns = ["d_" + str(c) for c in lv_weight.columns]   

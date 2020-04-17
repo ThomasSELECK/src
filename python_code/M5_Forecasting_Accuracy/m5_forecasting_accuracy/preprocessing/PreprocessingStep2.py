@@ -112,6 +112,12 @@ class PreprocessingStep2(BaseEstimator, TransformerMixin):
         for win in wins:
             for lag,lag_col in zip(lags, lag_cols):
                 X[f"rmean_{lag}_{win}"] = X[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).mean())
+                #X[f"rstd_{lag}_{win}"] = X[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).std())
+                #X[f"rmax_{lag}_{win}"] = X[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).max())
+                        
+        """for lag, lag_col in zip(lags, lag_cols):
+            X["monthly_demand_by_id_" + str(lag) + "_days_ago"] = X.groupby(["id", X["date"].dt.to_period("M")])[lag_col].cumsum()
+            X["weekly_demand_by_id_" + str(lag) + "_days_ago"] = X.groupby(["id", X["date"].dt.to_period("W")])[lag_col].cumsum()"""
 
         date_features = {
             "wday": "weekday",
@@ -127,6 +133,16 @@ class PreprocessingStep2(BaseEstimator, TransformerMixin):
                 X[date_feat_name] = X[date_feat_name].astype("int16")
             else:
                 X[date_feat_name] = getattr(X["date"].dt, date_feat_func).astype("int16")
+
+        """
+        # Price features
+        X["shift_price_t1"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))
+        X["price_change_t1"] = ((X["shift_price_t1"] - X["sell_price"]) / (X["shift_price_t1"])).fillna(0)
+        X.drop(["shift_price_t1"], axis = 1, inplace = True)
+        
+        X["rolling_price_std_t7"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(7).std())
+        X["rolling_price_std_t30"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(30).std())
+        """
                 
         print("Preprocessing data... done in", round(time.time() - st, 3), "secs")
         

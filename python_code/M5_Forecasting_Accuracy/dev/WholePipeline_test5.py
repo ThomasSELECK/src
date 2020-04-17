@@ -66,14 +66,16 @@ if __name__ == "__main__":
     max_lags = 57
 
     dl = DataLoader()
-    training_set_df, testing_set_df = dl.load_data_v2(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-03-27", enable_validation = enable_validation, first_day = 350, max_lags = max_lags)
+    training_set_df, testing_set_df, truth_df = dl.load_data_v2(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-03-27", enable_validation = enable_validation, first_day = 350, max_lags = max_lags)
 
     print("Training set shape:", training_set_df.shape)
     print("Testing set shape:", testing_set_df.shape)
 
-    prp = PreprocessingStep2(test_days = 28, dt_col = "date", keep_last_train_days = 56)
+    prp = PreprocessingStep2(test_days = 28, dt_col = "date")
     training_set_df = prp.fit_transform(training_set_df, training_set_df["sales"]) # y is not used here
-    training_set_df.dropna(inplace = True)
+    
+    # Need to drop first rows (where sales is null)
+    training_set_df = training_set_df.loc[~training_set_df["sales"].isnull()]
 
     cat_feats = ["item_id", "dept_id","store_id", "cat_id", "state_id", "event_name_1", "event_name_2", "event_type_1", "event_type_2"]
     useless_cols = ["id", "date", "sales","d", "wm_yr_wk", "weekday"]
@@ -83,14 +85,12 @@ if __name__ == "__main__":
     X_train = training_set_df[train_cols]
     y_train = training_set_df["sales"]
 
-    np.random.seed(777)
+    ## TODO: do split baseed on date. Put last 28 days into the validation dataset.
+    X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size = 2000000, random_state = 42)
+    train_set = lgb.Dataset(X_train, label = y_train, categorical_feature = cat_feats, free_raw_data = False)
+    val_set = lgb.Dataset(X_valid, label = y_valid, categorical_feature = cat_feats, free_raw_data = False)
 
-    fake_valid_inds = np.random.choice(X_train.index.values, 2_000_000, replace = False)
-    train_inds = np.setdiff1d(X_train.index.values, fake_valid_inds)
-    train_set = lgb.Dataset(X_train.loc[train_inds] , label = y_train.loc[train_inds], categorical_feature=cat_feats, free_raw_data=False)
-    val_set = lgb.Dataset(X_train.loc[fake_valid_inds], label = y_train.loc[fake_valid_inds], categorical_feature=cat_feats, free_raw_data=False)# This is a random sample, we're not gonna apply any time series train-test-split tricks here!
-
-    del training_set_df, X_train, y_train, fake_valid_inds,train_inds
+    #del training_set_df, X_train, y_train, X_valid, y_valid
     gc.collect()
 
     params = {
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         "min_data_in_leaf": 60,
         "max_depth": -1
     }
-    m_lgb = lgb.train(params, train_set, valid_sets = [train_set, val_set], valid_names = ["train", "valid"], verbose_eval = 100)#, early_stopping_rounds = 200)
+    m_lgb = lgb.train(params, train_set, valid_sets = [train_set, val_set], valid_names = ["train", "valid"], verbose_eval = 100, early_stopping_rounds = 200)
     # m_lgb.save_model("model.lgb") # m_lgb = lgb.Booster(model_file="model.lgb")
 
     # Feature importance
@@ -122,17 +122,36 @@ if __name__ == "__main__":
     alphas = [1.035, 1.03, 1.025]
     weights = [1 / len(alphas)] * len(alphas)
     fday = datetime(2016, 4, 25)
+
+    if enable_validation:
+        fday = datetime(2016, 4, 25) - timedelta(days = 28)
+
     predictions_lst = Parallel(n_jobs = len(alphas), verbose = 1, pre_dispatch = len(alphas), batch_size = 1)(delayed(make_autoregressive_predictions)(testing_set_df, max_lags, train_cols, alpha, weight, m_lgb) for alpha, weight in zip(alphas, weights))
     sub = reduce(pd.DataFrame.add, predictions_lst)
 
-    # Generate submission file
-    sub = sub.reset_index()
-    sub2 = sub.copy()
-    sub2["id"] = sub2["id"].str.replace("validation$", "evaluation")
-    sub = pd.concat([sub, sub2], axis = 0, sort = False)
-    sub.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "draft_script_submission_3.csv", index = False)
+    if enable_validation:
+        sub = sub.reset_index()
+        testing_set_df["demand"] = truth_df["sales"]
+        training_set_df["demand"] = training_set_df["sales"]
+        training_set_df.drop("d", axis = 1, inplace = True)
+        testing_set_df.drop("d", axis = 1, inplace = True)
+        e = WRMSSEEvaluator(training_set_df, testing_set_df)
+
+        preds = pd.melt(sub, id_vars = ["id"], value_vars = [col for col in sub.columns if col.startswith("F")], var_name = "d", value_name = "sales")
+        preds["date"] = preds["d"].str.replace("F", "").astype(np.int8).apply(lambda x: fday + timedelta(days = x - 1))
+        preds.drop("d", axis = 1, inplace = True)
+        preds.columns = ["id", "demand", "date"]
+        preds = preds[["id", "date", "demand"]]
+        print("Validation WRMSSE:", round(e.score(preds), 6))
+    else:
+        # Generate submission file
+        sub = sub.reset_index()
+        sub2 = sub.copy()
+        sub2["id"] = sub2["id"].str.replace("validation$", "evaluation")
+        sub = pd.concat([sub, sub2], axis = 0, sort = False)
+        sub.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "draft_script_submission_3.csv", index = False)
 
     # Stop the timer and print the exectution time
     print("*** Test finished: Executed in:", time.time() - start_time, "seconds ***")
 
-    # Public LB: 0.48525.
+    # Public LB: 0.48372.

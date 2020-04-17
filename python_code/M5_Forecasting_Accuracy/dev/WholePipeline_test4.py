@@ -85,7 +85,7 @@ def make_submission(test, submission, DAYS_PRED):
     assert final.drop("id", axis=1).isnull().sum().sum() == 0
     assert final["id"].equals(submission["id"])
 
-    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_06042020.csv", index=False)
+    final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_17042020.csv", index=False)
 
 # Call to main
 if __name__ == "__main__":
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     # Set the seed of numpy's PRNG
     np.random.seed(2019)
         
-    enable_validation = False
+    enable_validation = True
 
     dl = DataLoader()
     training_set_df, target_df, testing_set_df, truth_df, sample_submission_df = dl.load_data(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, "2016-03-27", enable_validation = enable_validation)

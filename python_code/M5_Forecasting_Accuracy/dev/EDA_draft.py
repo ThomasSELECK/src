@@ -94,6 +94,9 @@ preds2 = preds[["id", "date", "new_best_solution"]]
 preds2.columns = ["id", "date", "demand"]
 #print("Validation WRMSSE:", round(e.score(preds2), 6)) # Validation WRMSSE: 0.539443
 
+def rmse(y_true, y_pred):
+    return np.sqrt(metrics.mean_squared_error(y_true, y_pred))
+
 # Best RMSE by date
 best_preds_rmse_by_date_df = preds[["date", "best_preds", "demand"]].groupby("date").apply(lambda x: rmse(x["demand"], x["best_preds"])).reset_index()
 best_preds_rmse_by_date_df.columns = ["date", "best_preds_rmse"]
@@ -179,3 +182,29 @@ for i in range(abs_cor_mat.shape[0]):
     for j in range(i + 1, abs_cor_mat.shape[0]):
         if abs_cor_mat.iloc[i, j] > 0.8:
             count += 1
+
+# ACF on sales data
+from statsmodels.tsa.stattools import acf, pacf
+
+df = training_set_df[["id", "date", "sales"]]
+acf_df = df.groupby("id")["sales"].apply(acf)
+acf_df = acf_df.apply(pd.Series)
+acf_df.columns = ["lag_" + str(i) for i in acf_df.columns]
+acf_df.drop("lag_0", axis = 1, inplace = True)
+acf_df["max_autocorr"] = acf_df.max(axis = 1)
+acf_df["argmax_autocorr"] = acf_df.apply(lambda x: "lag_" + str(np.argmax(x) + 1), axis = 1)
+acf_df["argmax_autocorr"].value_counts() # Top = lag_1, lag_7, lag_14, lag_6, lag_2
+
+def safe_pacf(x):
+    try:
+        return pacf(x)
+    except:
+        return np.nan
+
+pacf_df = df.groupby("id")["sales"].apply(safe_pacf)
+pacf_df = pacf_df.apply(pd.Series)
+pacf_df.columns = ["lag_" + str(i) for i in pacf_df.columns]
+pacf_df.drop("lag_0", axis = 1, inplace = True)
+pacf_df["max_autocorr"] = pacf_df.max(axis = 1)
+pacf_df["argmax_autocorr"] = pacf_df.apply(lambda x: "lag_" + str(np.argmax(x) + 1), axis = 1)
+pacf_df["argmax_autocorr"].value_counts()

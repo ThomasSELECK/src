@@ -381,8 +381,8 @@ class DataLoader():
             sales_train_validation_df[f"d_{day}"] = np.nan
 
         sales_train_validation_df = pd.melt(sales_train_validation_df, id_vars = id_columns_lst, value_vars = [col for col in sales_train_validation_df.columns if col.startswith("d_")], var_name = "d", value_name = "sales")
-        sales_train_validation_df = sales_train_validation_df.merge(calendar_df, on = "d", copy = False)
-        sales_train_validation_df = sales_train_validation_df.merge(sell_prices_df, on = ["store_id", "item_id", "wm_yr_wk"], copy = False)
+        sales_train_validation_df = sales_train_validation_df.merge(calendar_df, how = "left", on = "d", copy = False)
+        sales_train_validation_df = sales_train_validation_df.merge(sell_prices_df, how = "left", on = ["store_id", "item_id", "wm_yr_wk"], copy = False)
         print("    Merging datasets... done in", round(time.time() - st, 3), "secs")
         
         st = time.time()
@@ -408,8 +408,24 @@ class DataLoader():
         # Create testing set
         valid_days_lst = [f"d_{day}" for day in range(tr_last - max_lags, tr_last + 28 + 1)]
         testing_set_df = sales_train_validation_df.loc[sales_train_validation_df["d"].isin(valid_days_lst)].reset_index(drop = True)
+        
+        # Generate a validation set if enable_validation is True
+        if enable_validation:
+            print("Generating validation set...")
+            
+            # Split data on 'date' feature
+            testing_set_df = training_set_df.loc[training_set_df["date"] > train_test_date_split].reset_index(drop = True)
+            training_set_df = training_set_df.loc[training_set_df["date"] <= train_test_date_split].reset_index(drop = True)
+                                    
+            truth_df = testing_set_df[["id", "date", "sales"]]
+            testing_set_df["sales"] = np.nan
+
+            print("Generating validation set... done")
+        else:
+            truth_df = None
+        
         print("    Creating final datasets... done in", round(time.time() - st, 3), "secs")
 
         print("Loading data... done")
 
-        return training_set_df, testing_set_df
+        return training_set_df, testing_set_df, truth_df
