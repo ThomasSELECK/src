@@ -21,6 +21,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="dev\WholePipeline_test6.py" />
     <Compile Include="dev\WholePipeline_test5.py" />
     <Compile Include="dev\DraftModel.py">
       <SubType>Code</SubType>
@@ -34,10 +35,18 @@
     <Compile Include="dev\TuningModel_test.py" />
     <Compile Include="dev\BacktestValidation_test.py" />
     <Compile Include="dev\WholePipeline_test4.py" />
+    <Compile Include="dev\wrmsse_draft.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="m5_forecasting_accuracy\models_evaluation\backtest.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="m5_forecasting_accuracy\models_evaluation\metric_dashboard.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\models_evaluation\wrmsse_metric_fast.py" />
     <Compile Include="m5_forecasting_accuracy\preprocessing\ParallelGroupBy.py" />
+    <Compile Include="m5_forecasting_accuracy\preprocessing\PreprocessingStep3.py" />
     <Compile Include="m5_forecasting_accuracy\preprocessing\PreprocessingStep2.py" />
     <Compile Include="old\WholePipeline_test3.py" />
     <Compile Include="old\WholePipeline_test2.py" />

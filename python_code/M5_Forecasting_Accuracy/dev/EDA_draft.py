@@ -90,8 +90,8 @@ preds["best_solution"] = preds[["best_preds_diff_to_tgt", "preds_diff_to_tgt"]].
 preds["best_solution_col"] = (preds["best_preds_diff_to_tgt"] == preds["best_solution"]).astype(np.int8).map({1: "best_preds", 0: "preds"})
 preds["new_best_solution"] = preds["best_preds"]
 preds["new_best_solution"].loc[preds["best_solution_col"] == "preds"] = preds["preds"].loc[preds["best_solution_col"] == "preds"]
-preds2 = preds[["id", "date", "new_best_solution"]]
-preds2.columns = ["id", "date", "demand"]
+#preds2 = preds[["id", "date", "new_best_solution"]]
+#preds2.columns = ["id", "date", "demand"]
 #print("Validation WRMSSE:", round(e.score(preds2), 6)) # Validation WRMSSE: 0.539443
 
 def rmse(y_true, y_pred):

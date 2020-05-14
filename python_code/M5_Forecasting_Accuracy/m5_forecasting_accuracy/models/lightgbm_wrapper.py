@@ -18,6 +18,7 @@
 #                                                                             #
 ###############################################################################
 
+import gc
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -41,7 +42,7 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
     The purpose of this class is to provide a wrapper for a LightGBM model, with cross-validation for finding the best number of rounds.
     """
     
-    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
+    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True, categorical_feature = None):
         """
         Class' constructor
 
@@ -57,7 +58,10 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
                 This indicates the frequency of scores printing. E.g. 50 means one score printed every 50 rounds.
 
         custom_eval_function : function
-                This is a function LightGBM will use as loss function.
+                This is a function LightGBM will use as metric.
+
+        custom_objective_function : function
+                This is a function LightGBM will use as loss.
 
         maximize : boolean
                 Indicates if the function customEvalFunction must be maximized or minimized. Not used when customEvalFunction is None.
@@ -76,6 +80,7 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
 
         eval_start_date : string or None (default = None)
                 Only used when not None and `eval_split_type` = "time".
+                Date used to determine the beginning of validation set.
 
         eval_date_col : string or None (default = None)
                 Only used when `eval_start_date` is not None and `eval_split_type` = "time".
@@ -89,6 +94,9 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
 
         enable_cv : bool (default = True)
                 If True, the best number of rounds is found using Cross Validation.
+
+        categorical_feature : list (default = None)
+                List of features that must be considered as categorical features by LightGBM.
                 
         Returns
         -------
@@ -99,6 +107,7 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
         self.params = params
         self.early_stopping_rounds = early_stopping_rounds
         self.custom_eval_function = custom_eval_function
+        self.custom_objective_function = custom_objective_function
         self.maximize = maximize
         self.nrounds = nrounds
         self.random_state = random_state
@@ -108,6 +117,7 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
         self.eval_date_col = eval_date_col
         self.verbose_eval = verbose_eval
         self.enable_cv = enable_cv
+        self.categorical_feature = categorical_feature
 
         self.lgb_model = None
         self.model_name = "LightGBM"
@@ -123,7 +133,7 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
         labels = dtrain.get_label()
         return "R2", r2_score(labels, preds) * 100, True # f(preds: array, dtrain: Dataset) -> name: string, value: array, is_higher_better: bool
         
-    def _fit(self, X, y, stratified_split = False, return_eval = False):
+    def _fit(self, X, y, stratified_split = False, return_eval = False, sample_weights = None):
         """
         This method trains the LightGBM model.
 
@@ -140,6 +150,9 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
 
         return_eval : bool (default = False)
                 This flag indicates whether to return eval data or not.
+
+        sample_weights : Pandas Series
+                Weights that will be given to training samples.
                 
         Returns
         -------
@@ -148,43 +161,60 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
         
         print("LightGBM training...")                       
         if self.enable_cv:
-            dtrain = lgb.Dataset(X, label = y)
+            if sample_weights is not None:
+                if self.categorical_feature is not None:
+                    dtrain = lgb.Dataset(X, label = y, categorical_feature = self.categorical_feature, weight = sample_weights)
+                else:
+                    dtrain = lgb.Dataset(X, label = y, weight = sample_weights)
+            else:
+                if self.categorical_feature is not None:
+                    dtrain = lgb.Dataset(X, label = y, categorical_feature = self.categorical_feature)
+                else:
+                    dtrain = lgb.Dataset(X, label = y)
             watchlist = [dtrain]
 
             print("    Cross-validating LightGBM with seed: " + str(self.random_state) + "...")                
             if self.early_stopping_rounds < 0:
-                cv_output = lgb.cv(self.params, dtrain, num_boost_round = self.nrounds, feval = self.custom_eval_function, verbose_eval = self.verbose_eval, show_stdv = True, stratified = stratified_split)
+                cv_output = lgb.cv(self.params, dtrain, num_boost_round = self.nrounds, feval = self.custom_eval_function, fobj = self.custom_objective_function, verbose_eval = self.verbose_eval, show_stdv = True, stratified = stratified_split)
             else:
-                cv_output = lgb.cv(self.params, dtrain, num_boost_round = self.nrounds, feval = self.custom_eval_function, early_stopping_rounds = self.early_stopping_rounds, verbose_eval = self.verbose_eval, show_stdv = True, stratified = stratified_split)
+                cv_output = lgb.cv(self.params, dtrain, num_boost_round = self.nrounds, feval = self.custom_eval_function, fobj = self.custom_objective_function, early_stopping_rounds = self.early_stopping_rounds, verbose_eval = self.verbose_eval, show_stdv = True, stratified = stratified_split)
 
             cv_output_df = pd.DataFrame(cv_output)
             self.nrounds = cv_output_df[cv_output_df.filter(regex = ".*-mean").columns.tolist()[0]].index[-1] + 1
 
             print("    Final training of LightGBM with seed: " + str(self.random_state) + " and num rounds = " + str(self.nrounds) + "...")
             if self.early_stopping_rounds < 0:
-                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, verbose_eval = self.verbose_eval)
+                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, fobj = self.custom_objective_function, verbose_eval = self.verbose_eval)
             else:
-                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, early_stopping_rounds = self.early_stopping_rounds, verbose_eval = self.verbose_eval)
+                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, fobj = self.custom_objective_function, early_stopping_rounds = self.early_stopping_rounds, verbose_eval = self.verbose_eval)
         else:
             if self.eval_split_type == "random":
                 if stratified_split:
-                    X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size = self.eval_size, random_state = self.random_state, stratify = y)
+                    X_train, X_eval, y_train, y_eval, weights_train, weights_eval = train_test_split(X, y, sample_weights, test_size = self.eval_size, random_state = self.random_state, stratify = y)
                 else:
-                    X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size = self.eval_size, random_state = self.random_state)
+                    X_train, X_eval, y_train, y_eval, weights_train, weights_eval = train_test_split(X, y, sample_weights, test_size = self.eval_size, random_state = self.random_state)
             else:
                 if self.eval_start_date is not None:
                     if self.eval_date_col is not None:
                         X_train = X.loc[X[self.eval_date_col] <= self.eval_start_date]
                         y_train = y.loc[X[self.eval_date_col] <= self.eval_start_date]
+                        if sample_weights is not None:
+                            weights_train = sample_weights.loc[X[self.eval_date_col] <= self.eval_start_date]
                         X_eval = X.loc[X[self.eval_date_col] > self.eval_start_date]
                         y_eval = y.loc[X[self.eval_date_col] > self.eval_start_date]
+                        if sample_weights is not None:
+                            weights_eval = sample_weights.loc[X[self.eval_date_col] > self.eval_start_date]
                         X_train.drop(self.eval_date_col, axis = 1, inplace = True)
                         X_eval.drop(self.eval_date_col, axis = 1, inplace = True)
                     else:
                         X_train = X.loc[X.index <= self.eval_start_date]
                         y_train = y.loc[X.index <= self.eval_start_date]
+                        if sample_weights is not None:
+                            weights_train = sample_weights.loc[X.index <= self.eval_start_date]
                         X_eval = X.loc[X.index > self.eval_start_date]
                         y_eval = y.loc[X.index > self.eval_start_date]
+                        if sample_weights is not None:
+                            weights_eval = sample_weights.loc[X.index > self.eval_start_date]
                 else:
                     if self.eval_size > 1:
                         threshold = self.eval_size
@@ -193,17 +223,37 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
 
                     X_train = X.iloc[0:threshold]
                     y_train = y[0:threshold]
+                    if sample_weights is not None:
+                        weights_train = sample_weights[0:threshold]
                     X_eval = X.iloc[threshold:X.shape[0]]
                     y_eval = y[threshold:y.shape[0]]
+                    if sample_weights is not None:
+                        weights_eval = sample_weights[threshold:y.shape[0]]
             
-            dtrain = lgb.Dataset(X_train, label = y_train)
-            dvalid = lgb.Dataset(X_eval, label = y_eval)
+            gc.collect()
+
+            if sample_weights is not None:
+                if self.categorical_feature is not None:
+                    dtrain = lgb.Dataset(X_train, label = y_train, categorical_feature = self.categorical_feature, weight = weights_train)
+                    dvalid = lgb.Dataset(X_eval, label = y_eval, categorical_feature = self.categorical_feature, weight = weights_eval)
+                else:
+                    dtrain = lgb.Dataset(X_train, label = y_train, weight = weights_train)
+                    dvalid = lgb.Dataset(X_eval, label = y_eval, weight = weights_eval)
+            else:
+                if self.categorical_feature is not None:
+                    dtrain = lgb.Dataset(X_train, label = y_train, categorical_feature = self.categorical_feature)
+                    dvalid = lgb.Dataset(X_eval, label = y_eval, categorical_feature = self.categorical_feature)
+                else:
+                    dtrain = lgb.Dataset(X_train, label = y_train)
+                    dvalid = lgb.Dataset(X_eval, label = y_eval)
+
             watchlist = [dtrain, dvalid]
+            gc.collect()
 
             if self.early_stopping_rounds < 0:
-                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, verbose_eval = self.verbose_eval)
+                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, fobj = self.custom_objective_function, verbose_eval = self.verbose_eval)
             else:
-                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, early_stopping_rounds = self.early_stopping_rounds, verbose_eval = self.verbose_eval)
+                self.lgb_model = lgb.train(self.params, dtrain, self.nrounds, watchlist, feval = self.custom_eval_function, fobj = self.custom_objective_function, early_stopping_rounds = self.early_stopping_rounds, verbose_eval = self.verbose_eval)
 
             self.nrounds = self.lgb_model.best_iteration
 
@@ -311,7 +361,7 @@ class LGBMClassifier(AbstractLGBMWrapper, ClassifierMixin):
     The purpose of this class is to provide a wrapper for a LightGBM classifier.
     """
     
-    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
+    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
         """
         Class' constructor
 
@@ -327,7 +377,10 @@ class LGBMClassifier(AbstractLGBMWrapper, ClassifierMixin):
                 This indicates the frequency of scores printing. E.g. 50 means one score printed every 50 rounds.
 
         custom_eval_function : function
-                This is a function LightGBM will use as loss function.
+                This is a function LightGBM will use as metric.
+
+        custom_objective_function : function
+                This is a function LightGBM will use as loss.
 
         maximize : boolean
                 Indicates if the function customEvalFunction must be maximized or minimized. Not used when customEvalFunction is None.
@@ -366,7 +419,7 @@ class LGBMClassifier(AbstractLGBMWrapper, ClassifierMixin):
         """
         
         # Call to superclass
-        super().__init__(params, early_stopping_rounds, custom_eval_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv)
+        super().__init__(params, early_stopping_rounds, custom_eval_function, custom_objective_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv)
 
         # Create LabelEncoder to avoid issues with messed up labels
         self._le = LabelEncoder()
@@ -481,7 +534,7 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
     The purpose of this class is to provide a wrapper for a LightGBM regressor.
     """
     
-    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
+    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
         """
         Class' constructor
 
@@ -497,7 +550,10 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
                 This indicates the frequency of scores printing. E.g. 50 means one score printed every 50 rounds.
 
         custom_eval_function : function
-                This is a function LightGBM will use as loss function.
+                This is a function LightGBM will use as metric.
+
+        custom_objective_function : function
+                This is a function LightGBM will use as loss.
 
         maximize : boolean
                 Indicates if the function customEvalFunction must be maximized or minimized. Not used when customEvalFunction is None.
@@ -536,9 +592,9 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
         """
         
         # Call to superclass
-        super().__init__(params, early_stopping_rounds, custom_eval_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv)
+        super().__init__(params, early_stopping_rounds, custom_eval_function, custom_objective_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv)
         
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weights = None):
         """
         This method trains the LightGBM model.
 
@@ -549,6 +605,9 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
 
         y : Pandas Series
                 This is the target related to the training data.
+
+        sample_weights : Pandas Series
+                Weights that will be given to training samples.
                 
         Returns
         -------
@@ -556,7 +615,7 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
         """
 
         # Call to superclass
-        super()._fit(X, y)
+        super()._fit(X, y, sample_weights = sample_weights)
 
         return self
 

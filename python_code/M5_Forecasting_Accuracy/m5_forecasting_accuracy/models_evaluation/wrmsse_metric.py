@@ -73,6 +73,7 @@ class WRMSSEEvaluator(object):
 
         self.train_series = self.trans_30490_to_42840(self.train_df)
         self.valid_series = self.trans_30490_to_42840(self.valid_df)
+        self.group_ids_items = self.generate_group_ids_items(self.valid_df)
         self.weights = self.get_weight_df()
         self.scale = self.get_scale()
         self.train_id_date = self.train_df[["id", "date"]].reset_index(drop = True)
@@ -88,7 +89,7 @@ class WRMSSEEvaluator(object):
 
         Parameters
         ----------
-        df: 
+        df: pd.DataFrame
 
         Returns
         -------
@@ -100,7 +101,7 @@ class WRMSSEEvaluator(object):
             if type(group_id) == str:
                 group_id = [group_id]
 
-            tr = pd.pivot_table(df[group_id + ["d", "demand"]], index = group_id, columns = "d", values = "demand").reset_index()
+            tr = pd.pivot_table(df[group_id + ["d", "demand"]], index = group_id, columns = "d", values = "demand", aggfunc = "sum").reset_index()
 
             if len(group_id) == 1:
                 tr.index = tr[group_id[0]].astype(str)
@@ -114,6 +115,40 @@ class WRMSSEEvaluator(object):
         res = pd.concat(series_map_lst)
            
         return res
+
+    def generate_group_ids_items(self, df):
+        """
+        This method create a DataFrame of time series for each item in self.group_ids.
+
+        Parameters
+        ----------
+        df: pd.DataFrame
+
+        Returns
+        -------
+        group_ids_items_df: pd.DataFrame
+                All time series associated with each item from self.group_ids.
+        """
+
+        group_ids_items_lst = []
+        for i, group_id in enumerate(self.group_ids):
+            if type(group_id) == str:
+                group_id = [group_id]
+
+            tr = pd.pivot_table(df[group_id + ["d", "demand"]], index = group_id, columns = "d", values = "demand").reset_index()
+
+            if len(group_id) == 1:
+                tr.index = tr[group_id[0]].astype(str)
+            elif len(group_id) == 2:
+                tr.index = tr[group_id[0]].astype(str) + "--" + tr[group_id[1]].astype(str)
+
+            time_series_ids_df = pd.DataFrame({"group_id": [group_id for _ in range(tr.shape[0])], "time_series_ids": tr.index})
+            time_series_ids_df = time_series_ids_df[["group_id", "time_series_ids"]]
+            group_ids_items_lst.append(time_series_ids_df)
+            
+        group_ids_items_df = pd.concat(group_ids_items_lst)
+           
+        return group_ids_items_df
     
     def get_weight_df(self) -> pd.DataFrame:
         """
@@ -217,8 +252,8 @@ class WRMSSEEvaluator(object):
 
         valid_preds = self.valid_df[self.id_columns + ["date"]].merge(valid_preds, how = "left", on = ["id", "date"])
         valid_preds["d"] = (valid_preds["date"] - pd.to_datetime("2011-01-29")).dt.days + 1
-        valid_preds = self.trans_30490_to_42840(valid_preds)
-        self.rmsse = self.get_rmsse(valid_preds)
+        self.valid_preds = self.trans_30490_to_42840(valid_preds)
+        self.rmsse = self.get_rmsse(self.valid_preds)
         self.contributors = pd.concat([self.weights, self.rmsse], axis = 1, sort = False).prod(axis = 1)
 
         return np.sum(self.contributors)
