@@ -27,7 +27,7 @@ from m5_forecasting_accuracy.preprocessing.PreprocessingStep2 import Preprocessi
 from m5_forecasting_accuracy.models.lightgbm_wrapper import LGBMRegressor
 from m5_forecasting_accuracy.model_utils.CustomTimeSeriesSplitter import CustomTimeSeriesSplitter
 from m5_forecasting_accuracy.preprocessing.categorical_encoders import CategoricalFeaturesEncoder, OrdinalEncoder, GroupingEncoder, LeaveOneOutEncoder, TargetAvgEncoder
-from m5_forecasting_accuracy.models_evaluation.wrmsse_metric import WRMSSEEvaluator
+from m5_forecasting_accuracy.models_evaluation.wrmsse_metric_fast import WRMSSEEvaluator
 
 pd.set_option("display.max_columns", 100)
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     # Set the seed of numpy's PRNG
     np.random.seed(777)
         
-    enable_validation = False
+    enable_validation = True
     max_lags = 57
 
     dl = DataLoader()
@@ -135,14 +135,22 @@ if __name__ == "__main__":
         training_set_df["demand"] = training_set_df["sales"]
         training_set_df.drop("d", axis = 1, inplace = True)
         testing_set_df.drop("d", axis = 1, inplace = True)
-        e = WRMSSEEvaluator(training_set_df, testing_set_df)
+        evaluator = WRMSSEEvaluator(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, "2016-03-27")
 
         preds = pd.melt(sub, id_vars = ["id"], value_vars = [col for col in sub.columns if col.startswith("F")], var_name = "d", value_name = "sales")
         preds["date"] = preds["d"].str.replace("F", "").astype(np.int8).apply(lambda x: fday + timedelta(days = x - 1))
         preds.drop("d", axis = 1, inplace = True)
         preds.columns = ["id", "demand", "date"]
         preds = preds[["id", "date", "demand"]]
-        print("Validation WRMSSE:", round(e.score(preds), 6))
+
+        with open("E:/preds_test5.pkl", "wb") as f:
+            pickle.dump((preds, truth_df), f)
+
+        preds_div = preds[["id", "date", "demand"]].pivot(index = "id", columns = "date", values = "demand").reset_index()
+        truth_piv = truth_df[["id", "date", "sales"]].pivot(index = "id", columns = "date", values = "sales").reset_index()
+        truth_piv.set_index("id", inplace = True)
+        preds_div.set_index("id", inplace = True)
+        print("Validation WRMSSE:", round(evaluator.wrmsse(preds_div, truth_piv, score_only = True), 6)) 
     else:
         # Generate submission file
         sub = sub.reset_index()

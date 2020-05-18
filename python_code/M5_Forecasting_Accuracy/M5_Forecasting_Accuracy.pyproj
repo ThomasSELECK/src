@@ -23,19 +23,22 @@
   <ItemGroup>
     <Compile Include="dev\WholePipeline_test6.py" />
     <Compile Include="dev\WholePipeline_test5.py" />
-    <Compile Include="dev\DraftModel.py">
+    <Compile Include="old\DraftModel.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="dev\EDA_draft.py">
+    <Compile Include="old\EDA_draft.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="dev\files_paths.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="dev\TuningModel_test.py" />
+    <Compile Include="old\TuningModel_test.py" />
     <Compile Include="dev\BacktestValidation_test.py" />
     <Compile Include="dev\WholePipeline_test4.py" />
-    <Compile Include="dev\wrmsse_draft.py">
+    <Compile Include="old\wrmsse_draft.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="m5_forecasting_accuracy\models\lgbm_day_model.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="m5_forecasting_accuracy\models_evaluation\backtest.py">
@@ -45,7 +48,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="m5_forecasting_accuracy\models_evaluation\wrmsse_metric_fast.py" />
-    <Compile Include="m5_forecasting_accuracy\preprocessing\ParallelGroupBy.py" />
+    <Compile Include="old\ParallelGroupBy.py" />
     <Compile Include="m5_forecasting_accuracy\preprocessing\PreprocessingStep3.py" />
     <Compile Include="m5_forecasting_accuracy\preprocessing\PreprocessingStep2.py" />
     <Compile Include="old\WholePipeline_test3.py" />
@@ -55,7 +58,7 @@
     <Compile Include="m5_forecasting_accuracy\data_loading\__init__.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="m5_forecasting_accuracy\models_evaluation\wrmsse_metric.py">
+    <Compile Include="old\wrmsse_metric.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="m5_forecasting_accuracy\models_evaluation\__init__.py">

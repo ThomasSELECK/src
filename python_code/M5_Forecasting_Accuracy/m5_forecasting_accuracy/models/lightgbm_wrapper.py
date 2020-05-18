@@ -161,16 +161,24 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
         
         print("LightGBM training...")                       
         if self.enable_cv:
+            features_names_lst = X.columns.tolist()
+            X_npa = X.values.astype(np.float32).copy()
+            del X
+            gc.collect()
+            y_npa = y.values.astype(np.float32).copy()
+            del y
+            gc.collect()
+
             if sample_weights is not None:
                 if self.categorical_feature is not None:
-                    dtrain = lgb.Dataset(X, label = y, categorical_feature = self.categorical_feature, weight = sample_weights)
+                    dtrain = lgb.Dataset(X_npa, label = y_npa, categorical_feature = self.categorical_feature, weight = sample_weights, free_raw_data = False, feature_name = features_names_lst)
                 else:
-                    dtrain = lgb.Dataset(X, label = y, weight = sample_weights)
+                    dtrain = lgb.Dataset(X_npa, label = y_npa, weight = sample_weights, free_raw_data = False, feature_name = features_names_lst)
             else:
                 if self.categorical_feature is not None:
-                    dtrain = lgb.Dataset(X, label = y, categorical_feature = self.categorical_feature)
+                    dtrain = lgb.Dataset(X_npa, label = y_npa, categorical_feature = self.categorical_feature, free_raw_data = False, feature_name = features_names_lst)
                 else:
-                    dtrain = lgb.Dataset(X, label = y)
+                    dtrain = lgb.Dataset(X_npa, label = y_npa, free_raw_data = False, feature_name = features_names_lst)
             watchlist = [dtrain]
 
             print("    Cross-validating LightGBM with seed: " + str(self.random_state) + "...")                
@@ -232,20 +240,38 @@ class AbstractLGBMWrapper(ABC, BaseEstimator):
             
             gc.collect()
 
+            # Save some memory
+            features_names_lst = X_train.columns.tolist()
+            X_train_npa = X_train.values.astype(np.float32).copy()
+            del X_train
+            gc.collect()
+            X_eval_npa = X_eval.values.astype(np.float32).copy()
+            del X_eval
+            gc.collect()
+            y_train_npa = y_train.values.astype(np.float32).copy()
+            y_eval_npa = y_eval.values.astype(np.float32).copy()
+            del y_train
+            del y_eval
+            gc.collect()
+
             if sample_weights is not None:
                 if self.categorical_feature is not None:
-                    dtrain = lgb.Dataset(X_train, label = y_train, categorical_feature = self.categorical_feature, weight = weights_train)
-                    dvalid = lgb.Dataset(X_eval, label = y_eval, categorical_feature = self.categorical_feature, weight = weights_eval)
+                    """print("Found self.categorical_feature:", self.categorical_feature)
+                    print("features_names_lst:", features_names_lst)
+                    print([1 if f in self.categorical_feature else 0 for f in features_names_lst])"""
+
+                    dtrain = lgb.Dataset(X_train_npa, label = y_train_npa, categorical_feature = self.categorical_feature, weight = weights_train, free_raw_data = False, feature_name = features_names_lst)
+                    dvalid = lgb.Dataset(X_eval_npa, label = y_eval_npa, categorical_feature = self.categorical_feature, weight = weights_eval, free_raw_data = False, feature_name = features_names_lst)
                 else:
-                    dtrain = lgb.Dataset(X_train, label = y_train, weight = weights_train)
-                    dvalid = lgb.Dataset(X_eval, label = y_eval, weight = weights_eval)
+                    dtrain = lgb.Dataset(X_train_npa, label = y_train_npa, weight = weights_train, free_raw_data = False, feature_name = features_names_lst)
+                    dvalid = lgb.Dataset(X_eval_npa, label = y_eval_npa, weight = weights_eval, free_raw_data = False, feature_name = features_names_lst)
             else:
                 if self.categorical_feature is not None:
-                    dtrain = lgb.Dataset(X_train, label = y_train, categorical_feature = self.categorical_feature)
-                    dvalid = lgb.Dataset(X_eval, label = y_eval, categorical_feature = self.categorical_feature)
+                    dtrain = lgb.Dataset(X_train_npa, label = y_train_npa, categorical_feature = self.categorical_feature, free_raw_data = False, feature_name = features_names_lst)
+                    dvalid = lgb.Dataset(X_eval_npa, label = y_eval_npa, categorical_feature = self.categorical_feature, free_raw_data = False, feature_name = features_names_lst)
                 else:
-                    dtrain = lgb.Dataset(X_train, label = y_train)
-                    dvalid = lgb.Dataset(X_eval, label = y_eval)
+                    dtrain = lgb.Dataset(X_train_npa, label = y_train_npa, free_raw_data = False, feature_name = features_names_lst)
+                    dvalid = lgb.Dataset(X_eval_npa, label = y_eval_npa, free_raw_data = False, feature_name = features_names_lst)
 
             watchlist = [dtrain, dvalid]
             gc.collect()
@@ -361,7 +387,7 @@ class LGBMClassifier(AbstractLGBMWrapper, ClassifierMixin):
     The purpose of this class is to provide a wrapper for a LightGBM classifier.
     """
     
-    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
+    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True, categorical_feature = None):
         """
         Class' constructor
 
@@ -412,6 +438,9 @@ class LGBMClassifier(AbstractLGBMWrapper, ClassifierMixin):
 
         enable_cv : bool (default = True)
                 If True, the best number of rounds is found using Cross Validation.
+
+        categorical_feature : list (default = None)
+                List of features that must be considered as categorical features by LightGBM.
                 
         Returns
         -------
@@ -419,7 +448,7 @@ class LGBMClassifier(AbstractLGBMWrapper, ClassifierMixin):
         """
         
         # Call to superclass
-        super().__init__(params, early_stopping_rounds, custom_eval_function, custom_objective_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv)
+        super().__init__(params, early_stopping_rounds, custom_eval_function, custom_objective_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv, categorical_feature)
 
         # Create LabelEncoder to avoid issues with messed up labels
         self._le = LabelEncoder()
@@ -534,7 +563,7 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
     The purpose of this class is to provide a wrapper for a LightGBM regressor.
     """
     
-    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True):
+    def __init__(self, params, early_stopping_rounds, custom_eval_function = None, custom_objective_function = None, maximize = True, nrounds = 10000, random_state = 0, eval_split_type = "random", eval_size = 0.1, eval_start_date = None, eval_date_col = None, verbose_eval = 1, enable_cv = True, categorical_feature = None):
         """
         Class' constructor
 
@@ -585,6 +614,9 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
 
         enable_cv : bool (default = True)
                 If True, the best number of rounds is found using Cross Validation.
+
+        categorical_feature : list (default = None)
+                List of features that must be considered as categorical features by LightGBM.
                 
         Returns
         -------
@@ -592,7 +624,7 @@ class LGBMRegressor(AbstractLGBMWrapper, RegressorMixin):
         """
         
         # Call to superclass
-        super().__init__(params, early_stopping_rounds, custom_eval_function, custom_objective_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv)
+        super().__init__(params, early_stopping_rounds, custom_eval_function, custom_objective_function, maximize, nrounds, random_state, eval_split_type, eval_size, eval_start_date, eval_date_col, verbose_eval, enable_cv, categorical_feature)
         
     def fit(self, X, y, sample_weights = None):
         """

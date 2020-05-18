@@ -114,81 +114,49 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
             self._orig_earliest_date = pd.to_datetime(X["date"]).min()
             X = pd.concat([self._last_train_rows, X], axis = 0).reset_index(drop = True)
                 
-        # Rolling demand features
-        for shift in [0, 1, 2, 6, 7, 14]:
-            X[f"shift_t{shift}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.shift(shift))
-            
-        for size in [7, 30, 60, 90, 180]:
-            X[f"rolling_mean_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).mean())
-            X[f"rolling_std_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).std())
-            X[f"rolling_sum_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-            
-        X["rolling_skew_t30"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(30).skew())
-        X["rolling_kurt_t30"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(30).kurt())
-        
+        # Doing feature engineering
+        lags = [7, 28]
+        lag_cols = [f"lag_{lag}" for lag in lags]
+        for lag, lag_col in zip(lags, lag_cols):
+            X[lag_col] = X[["id", "shifted_demand"]].groupby("id")["shifted_demand"].shift(lag - 1)
+
+        wins = [7, 28]
+        for win in wins:
+            for lag,lag_col in zip(lags, lag_cols):
+                X[f"rmean_{lag}_{win}"] = X[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).mean())
+                #X[f"rstd_{lag}_{win}"] = X[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).std())
+                #X[f"rmax_{lag}_{win}"] = X[["id", lag_col]].groupby("id")[lag_col].transform(lambda x : x.rolling(win).max())
+                        
+        """for lag, lag_col in zip(lags, lag_cols):
+            X["monthly_demand_by_id_" + str(lag) + "_days_ago"] = X.groupby(["id", X["date"].dt.to_period("M")])[lag_col].cumsum()
+            X["weekly_demand_by_id_" + str(lag) + "_days_ago"] = X.groupby(["id", X["date"].dt.to_period("W")])[lag_col].cumsum()"""
+
+        date_features = {
+            "wday": "weekday",
+            "week": "weekofyear",
+            "month": "month",
+            "quarter": "quarter",
+            "year": "year",
+            "mday": "day",
+        }
+    
+        for date_feat_name, date_feat_func in date_features.items():
+            if date_feat_name in X.columns:
+                X[date_feat_name] = X[date_feat_name].astype("int16")
+            else:
+                X[date_feat_name] = getattr(X["date"].dt, date_feat_func).astype("int16")
+
+        """
         # Price features
         X["shift_price_t1"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))
-        X["price_change_t1"] = (X["shift_price_t1"] - X["sell_price"]) / (X["shift_price_t1"])
-        X["rolling_price_max_t365"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1).rolling(365).max())
-        X["price_change_t365"] = (X["rolling_price_max_t365"] - X["sell_price"]) / (X["rolling_price_max_t365"])
+        X["price_change_t1"] = ((X["shift_price_t1"] - X["sell_price"]) / (X["shift_price_t1"])).fillna(0)
+        X.drop(["shift_price_t1"], axis = 1, inplace = True)
         
         X["rolling_price_std_t7"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(7).std())
         X["rolling_price_std_t30"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.rolling(30).std())
-   
-        X.drop(["rolling_price_max_t365", "shift_price_t1"], axis = 1, inplace = True)
-
-        # Time-related features
-        X[self.dt_col] = pd.to_datetime(X[self.dt_col])
-        attrs = ["year", "quarter", "month", "week", "day", "dayofweek", "is_year_end", "is_year_start", "is_quarter_end", "is_quarter_start", "is_month_end"]
-
-        for attr in attrs:
-            dtype = np.int16 if attr == "year" else np.int8
-            X[attr] = getattr(X[self.dt_col].dt, attr).astype(dtype)
-
-        X["is_weekend"] = X["dayofweek"].isin([5, 6]).astype(np.int8)
-                
-        ### New features
-        """
-        for size in [7, 30]:
-            X[f"store_rolling_sum_t{size}"] = X.groupby(["store_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-            X[f"cat_rolling_sum_t{size}"] = X.groupby(["cat_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-            
-        X["monthly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("M"))["shifted_demand"].cumsum()
-        X["weekly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("W"))["shifted_demand"].cumsum()
-
-        tmp = X[["id", "shifted_demand"]]
-        tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
-
-        for size in [7, 30]:
-            X[f"nb_zeros_rolling_t{size}"] = tmp.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-
-        # Bin sell_price
-        X["binned_sell_price"] = 0
-        X["binned_sell_price"].loc[X["sell_price"] <= 0.80] = 6
-        X["binned_sell_price"].loc[(X["sell_price"] > 0.80) & (X["sell_price"] <= 1)] = 5
-        X["binned_sell_price"].loc[(X["sell_price"] > 1) & (X["sell_price"] <= 10)] = 4
-        X["binned_sell_price"].loc[(X["sell_price"] > 10) & (X["sell_price"] <= 20)] = 2
-        X["binned_sell_price"].loc[(X["sell_price"] > 20) & (X["sell_price"] <= 40)] = 3
-        X["binned_sell_price"].loc[X["sell_price"] > 40] = 1
         """
 
-        X["monthly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
-        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
-        X["monthly_demand_by_store"] = X.groupby(["store_id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
-        X["weekly_demand_by_store"] = X.groupby(["store_id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
-        X["monthly_demand_by_item_id"] = X.groupby(["item_id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
-        X["weekly_demand_by_item_id"] = X.groupby(["item_id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
-
-        # Max consecutive zeros length
-        tmp = X[["id", "shifted_demand"]]
-        tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
-        tmp2 = tmp.groupby(["id"])["shifted_demand"].apply(self._max_consecutive_nonzero).reset_index()
-        tmp3 = tmp.groupby(["id"])["shifted_demand"].apply(self._max_consecutive_nonzero_at_end).reset_index()
-        tmp2 = tmp2.merge(tmp3, how = "left", on = "id")
-        tmp2.columns = ["id", "max_consecutive_zeros", "max_consecutive_zeros_at_end"]
-        X = X.merge(tmp2, how = "left", on = "id")
-
-        X.drop(["is_quarter_start", "event_type_2", "is_month_end", "is_quarter_end", "event_name_2", "is_year_start", "max_consecutive_zeros_at_end"], axis = 1, inplace = True)
+        X.drop(["event_type_2", "event_name_2"], axis = 1, inplace = True)
                 
         if self._last_train_rows is not None and not self._is_train_data:
             X = X.loc[pd.to_datetime(X["date"]) >= self._orig_earliest_date]

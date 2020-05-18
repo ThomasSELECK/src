@@ -93,7 +93,7 @@ class WRMSSEDashboard(object):
         None
         """
 
-        WRMSSEE = evaluator.score(valid_pred_mlt_df)
+        WRMSSEE = evaluator.score(valid_pred_mlt_df) # Need a DataFrame with shape (30490, 29) as input (ID + 28 date cols)
 
         all_rmsse_df = evaluator.contributors.copy().reset_index()
         all_rmsse_df.columns = ["time_series_ids", "wrmsse"]
@@ -200,9 +200,9 @@ class WRMSSEDashboard(object):
             trn = train_df.filter(regex = "d_.*").loc[train_df["group_id"] == group_id].iloc[:, -28 * 3:]
             val = valid_df.filter(regex = "d_.*").loc[valid_df["group_id"] == group_id]
             pred = valid_preds_df.filter(regex = "d_.*").loc[valid_preds_df["group_id"] == group_id]
-            date_df = pd.concat([evaluator.train_df[["d", "date"]].drop_duplicates(), evaluator.valid_df[["d", "date"]].drop_duplicates()], axis = 0)
-            date_df["d"] = "d_" + date_df["d"].astype(str)
 
+            date_df = evaluator.calendar_df[["d", "date"]]
+            date_df["date"] = pd.to_datetime(date_df["date"])
             trn = self._create_viz_df(trn, date_df)
             val = self._create_viz_df(val, date_df)
             pred = self._create_viz_df(pred, date_df)

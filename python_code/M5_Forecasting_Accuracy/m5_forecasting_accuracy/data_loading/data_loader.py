@@ -430,7 +430,7 @@ class DataLoader():
 
         return training_set_df, testing_set_df, truth_df
 
-    def load_data_v3(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, train_test_date_split, enable_validation = True, first_day = 1200, max_lags = 57, shift_target = True):
+    def load_data_v3(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, day_to_predict, train_test_date_split, enable_validation = True, first_day = 1200, max_lags = 57, shift_target = True):
         """
         This function is a wrapper for the loading of the data.
 
@@ -476,6 +476,8 @@ class DataLoader():
         calendar_df = pd.read_csv(calendar_data_path_str, dtype = calendar_dtypes_dict, parse_dates = ["date"])
         sell_prices_df = pd.read_csv(sell_prices_data_path_str, dtype = sell_prices_dtypes_dict)
         sales_train_validation_df = pd.read_csv(sales_train_validation_data_path_str, usecols = id_columns_lst + valid_days_lst, dtype = sales_train_validation_dtype_dict)
+        sample_submission_df = pd.read_csv(sample_submission_data_path_str)
+        sample_submission_df = self.reduce_mem_usage(sample_submission_df, "sample_submission_df")
                                         
         print("    Reading files from disk... done in", round(time.time() - st, 3), "secs")
         
@@ -509,13 +511,22 @@ class DataLoader():
         # Stationarize the series
         orig_target_df = sales_train_validation_df[["id", "date", "demand"]]
         #sales_train_validation_df["demand"] = sales_train_validation_df.groupby(["id"])["demand"].transform(lambda x: x - x.shift(1))
-        #sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] > 200] = 200 # Clip outliers
-        #sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < -200] = -200 # Clip outliers
+
+        # Remove outliers from the series
+        sales_train_validation_df["demand_q99"] = sales_train_validation_df["id"].map(sales_train_validation_df.groupby(["id"])["demand"].quantile(0.99).to_dict())
+        #sales_train_validation_df["demand_q1"] = sales_train_validation_df["id"].map(sales_train_validation_df.groupby(["id"])["demand"].quantile(0.01).to_dict())
+        nb_outliers = sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] > sales_train_validation_df["demand_q99"]].shape[0]
+        #nb_outliers += sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]].shape[0]
+        sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] > sales_train_validation_df["demand_q99"]] = sales_train_validation_df["demand_q99"].loc[sales_train_validation_df["demand"] > sales_train_validation_df["demand_q99"]] # Clip outliers
+        #sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]] = sales_train_validation_df["demand_q1"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]] # Clip outliers
+        #sales_train_validation_df.drop(["demand_q1", "demand_q99"], axis = 1, inplace = True)
+        sales_train_validation_df.drop(["demand_q99"], axis = 1, inplace = True)
+        print("Removed", nb_outliers, "outliers from the original series, which equals to ", round((nb_outliers / sales_train_validation_df.shape[0]) * 100, 3), "% data modified")
 
         if shift_target:
             # Shift demand column to avoid leakage
             tmp_df = sales_train_validation_df[["id", "date", "demand"]]
-            tmp_df["shifted_demand"] = tmp_df.groupby(["id"])["demand"].transform(lambda x: x.shift(test_set_days_length))
+            tmp_df["shifted_demand"] = tmp_df.groupby(["id"])["demand"].transform(lambda x: x.shift(day_to_predict))
             sales_train_validation_df = sales_train_validation_df.merge(tmp_df, how = "left", on = ["id", "date", "demand"])
 
             # Need to drop first rows (where shifted_demand is null)
@@ -543,6 +554,9 @@ class DataLoader():
             # Save target
             target_df = training_set_df[["id", "date", "demand"]]
             truth_df = testing_set_df[["id", "date", "demand"]]
+            
+            # Remove outlier removal step from truth
+            truth_df = orig_target_df.loc[orig_target_df["date"].isin(truth_df["date"])].reset_index(drop = True)
 
             print("Generating validation set... done")
         else:
@@ -558,4 +572,4 @@ class DataLoader():
 
         print("Loading data... done")
 
-        return training_set_df, target_df, testing_set_df, truth_df, orig_target_df
+        return training_set_df, target_df, testing_set_df, truth_df, orig_target_df, sample_submission_df

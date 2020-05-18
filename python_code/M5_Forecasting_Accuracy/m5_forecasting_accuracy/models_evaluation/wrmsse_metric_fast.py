@@ -77,31 +77,18 @@ class WRMSSEEvaluator(object):
 
         self.train_series = self.trans_30490_to_42840(self.train_df, self.train_target_columns)
         self.valid_series = self.trans_30490_to_42840(self.valid_df, self.valid_target_columns)
-
         self.roll_mat_csr, self.roll_index = self.create_rollup_index()
+        self.group_ids_items = self.generate_group_ids_items()
 
-        st = time.time()
         self.S = self.get_s()
-        print("S computed in:", time.time() - st, "secs")
-
-        st = time.time()
         self.W = self.get_w()
-        print("W computed in:", time.time() - st, "secs")
-
         self.SW = self.W / np.sqrt(self.S)
 
-        st = time.time()
         self.weights = self.get_weight_df() # Equivalent to get_w()
-        print("weights computed in:", time.time() - st, "secs")
-
-        st = time.time()
         self.scale = self.get_scale() # Equivalent to get_s()
-        print("scale computed in:", time.time() - st, "secs")
 
-        self.train_series = None
-        self.train_df = None
-        self.prices = None
-        self.calendar = None
+        #self.train_series = None
+        #self.train_df = None
         gc.collect()
 
     def trans_30490_to_42840(self, df, cols):
@@ -131,6 +118,26 @@ class WRMSSEEvaluator(object):
         res = pd.concat(series_map_lst)
 
         return res
+
+    def generate_group_ids_items(self):
+        """
+        This method create a DataFrame of time series for each item in self.group_ids.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        group_ids_items_df: pd.DataFrame
+                All time series associated with each item from self.group_ids.
+        """
+
+        groups_ids = [["all_id"], ["state_id"], ["store_id"], ["cat_id"], ["dept_id"], ["item_id"], ["state_id", "cat_id"], ["state_id", "dept_id"], ["store_id", "cat_id"], ["store_id", "dept_id"], ["item_id", "state_id"], ["item_id", "store_id"]]
+        group_ids_items_df = pd.DataFrame({"group_id": self.roll_index.get_level_values("level"), "time_series_ids": self.roll_index.get_level_values("id")})
+        group_ids_items_df["group_id"] = group_ids_items_df["group_id"].apply(lambda x: groups_ids[x])
+                   
+        return group_ids_items_df
 
     def create_rollup_index(self):
         # List of categories combinations for aggregations as defined in docs:
@@ -301,8 +308,8 @@ class WRMSSEEvaluator(object):
 
         valid_preds.columns = ["id"] + self.valid_target_columns
         valid_preds = self.valid_df[self.id_columns].merge(valid_preds, how = "left", on = "id")
-        valid_preds = self.trans_30490_to_42840(valid_preds, self.valid_target_columns)
-        self.rmsse = self.get_rmsse(valid_preds)
+        self.valid_preds = self.trans_30490_to_42840(valid_preds, self.valid_target_columns)
+        self.rmsse = self.get_rmsse(self.valid_preds)
         self.contributors = pd.concat([self.weights, self.rmsse], axis = 1, sort = False).prod(axis = 1)
         
         return np.sum(self.contributors)
