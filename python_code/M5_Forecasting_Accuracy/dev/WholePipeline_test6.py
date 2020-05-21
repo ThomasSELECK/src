@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # Set the seed of numpy's PRNG
     np.random.seed(2019)
         
-    enable_validation = True
+    enable_validation = False
     max_lags = 57
     test_days = 1
     day_to_predict = 1 # This means we want to predict t + 1 knowing t
@@ -79,6 +79,9 @@ if __name__ == "__main__":
     day_model = LGBMDayModel(train_test_date_split, eval_start_date)
     day_model.fit(training_set_df, y_train)
     preds = day_model.predict(testing_set_df, date_to_predict)
+    #preds = preds.merge(orig_target_df[["id", "date", "shifted_demand"]], how = "left", on = ["id", "date"])
+    #preds["demand"] = preds["shifted_demand"] + preds["demand"]
+    #preds.drop("shifted_demand", axis = 1, inplace = True)
     print("*** Train + predict: Executed in:", time.time() - start_time, "seconds ***")
 
     # Attach "date" to X_train for cross validation.
@@ -92,6 +95,9 @@ if __name__ == "__main__":
     feature_importance_df.to_excel("E:/draft_lgb_importances.xlsx")
 
     if enable_validation:
+        with open("E:/preds_test_18052020.pkl", "wb") as f:
+            pickle.dump((preds, truth_df, orig_target_df), f)
+
         """
         with open("E:/preds_test5.pkl", "rb") as f:
             preds, truth_df = pickle.load(f)
@@ -101,6 +107,23 @@ if __name__ == "__main__":
         preds = preds.loc[preds["date"] == "2016-03-28"]
         """
 
+        # Score the predictions
+        preds2 = preds.copy()
+        preds2.columns = ["id", "date", "preds"]
+        preds_rmse_by_date_df = preds2.merge(truth_df, how = "left", on = ["id", "date"])
+        preds_rmse_by_date_df = preds_rmse_by_date_df[["date", "preds", "demand"]].groupby("date").apply(lambda x: rmse(x["demand"], x["preds"])).reset_index()
+        preds_rmse_by_date_df.columns = ["date", "preds_rmse"]
+        print(preds_rmse_by_date_df)
+
+        best_preds_piv = preds[["id", "date", "demand"]].pivot(index = "id", columns = "date", values = "demand").reset_index()
+        truth_piv = truth_df[["id", "date", "demand"]].pivot(index = "id", columns = "date", values = "demand").reset_index()
+        truth_piv.set_index("id", inplace = True)
+        best_preds_piv.set_index("id", inplace = True)
+        best_preds_piv.columns = ["F" + str(i) for i in range(1, 29)]
+        truth_piv.columns = ["F" + str(i) for i in range(1, 29)]
+        print("Validation WRMSSE:", round(day_model.evaluator.wrmsse(best_preds_piv, truth_piv, score_only = True), 6))
+
+        """
         with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v4_best_preds.pkl", "rb") as f:
             best_preds = pickle.load(f)
 
@@ -141,6 +164,8 @@ if __name__ == "__main__":
         best_preds_piv.columns = ["F" + str(i) for i in range(1, 29)]
         truth_piv.columns = ["F" + str(i) for i in range(1, 29)]
         print("Validation WRMSSE:", round(day_model.evaluator.wrmsse(best_preds_piv, truth_piv, score_only = True), 6)) 
+        """
+
         # Validation WRMSSE: 0.557925
         # [703]	training's WRMSSE: 0.536104	valid_1's WRMSSE: 0.552914 => training with custom loss + custom metric + sqrt(weights) + outliers removal
         #         date  best_preds_rmse  preds_rmse
@@ -169,7 +194,7 @@ if __name__ == "__main__":
         best_submission_df.drop("F1", axis = 1, inplace = True)
         best_submission_df = best_submission_df.merge(preds, how = "left", on = "id").fillna(0.0)
         best_submission_df = best_submission_df[["id"] + ["F" + str(i) for i in range(1, 29)]]
-        best_submission_df.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_16052020.csv", index = False)
+        best_submission_df.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_21052020.csv", index = False)
         
         """preds = preds.pivot(index = "id", columns = "date", values = "demand").reset_index()
         preds.columns = ["id"] + ["F" + str(d + 1) for d in range(28)]

@@ -182,7 +182,7 @@ class WRMSSEDashboard(object):
                 for index, val in enumerate(weights["weight"]):
                     axs[1].text(index * 1, val + .01, round(val, 2), color = "black", ha = "center", fontsize = 10 if i == 2 else 8)
              
-                fig.suptitle(f"Level {i}: {evaluator.group_ids[i - 1]}", size = 24, y = 0.995, fontweight = "bold")
+                fig.suptitle(f"Level {i}: {group_ids[i - 1]}", size = 24, y = 0.995, fontweight = "bold")
                 fig.tight_layout(rect = [0, 0, 1, 0.95])
                 fig.savefig(f"{self.plots_directory_path_str}Level_{i}_RMSSE_weight_plot.png", dpi = 300)
                 plt.close(fig)

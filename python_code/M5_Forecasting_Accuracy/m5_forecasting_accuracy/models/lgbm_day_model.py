@@ -48,14 +48,19 @@ class LGBMDayModel(object):
         self.lgb_params = {
             "boosting_type": "gbdt",
             "metric": "custom",
-            "objective": "custom",
+            "objective": "tweedie",
+            "tweedie_variance_power": 1.1,
             "n_jobs": -1,
             "seed": 20,
-            "learning_rate": 0.075,
+            "learning_rate": 0.03,
             "subsample": 0.66,
-            "bagging_freq": 2,
+            "bagging_freq": 1,
             "colsample_bytree": 0.77,
             "max_depth": -1,
+            "num_leaves": 2 ** 11 - 1,
+            "min_data_in_leaf": 2 ** 12 - 1,
+            "max_bin": 100,
+            "boost_from_average": False,
             "reg_alpha": 0.1,
             "reg_lambda": 0.1,
             "verbosity": -1
@@ -65,7 +70,8 @@ class LGBMDayModel(object):
 
         self.useless_features_lst = ["wm_yr_wk", "quarter", "id", "shifted_demand", "d"]
         self.evaluator = WRMSSEEvaluator(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, train_test_date_split)
-        self.lgb_model = LGBMRegressor(self.lgb_params, early_stopping_rounds = 200, custom_eval_function = self.evaluator.lgb_feval, custom_objective_function = self.evaluator.lgb_fobj, maximize = False, nrounds = 3000, eval_split_type = "time", eval_start_date = eval_start_date, eval_date_col = "date", verbose_eval = 100, enable_cv = False, categorical_feature = self.categorical_features_lst)
+        #self.lgb_model = LGBMRegressor(self.lgb_params, early_stopping_rounds = 200, custom_eval_function = self.evaluator.lgb_feval, custom_objective_function = self.evaluator.lgb_fobj, maximize = False, nrounds = 3000, eval_split_type = "time", eval_start_date = eval_start_date, eval_date_col = "date", verbose_eval = 100, enable_cv = False, categorical_feature = self.categorical_features_lst)
+        self.lgb_model = LGBMRegressor(self.lgb_params, early_stopping_rounds = 200, custom_eval_function = self.evaluator.lgb_feval, maximize = False, nrounds = 3000, eval_split_type = "time", eval_start_date = eval_start_date, eval_date_col = "date", verbose_eval = 100, enable_cv = False, categorical_feature = self.categorical_features_lst)
     
     def fit(self, X_train, y_train):
         """
@@ -88,12 +94,11 @@ class LGBMDayModel(object):
         training_set_weights_sr = self.evaluator.generate_dataset_weights(X_train)
         X_train.drop(self.useless_features_lst, axis = 1, inplace = True)
         X_train = X_train.reset_index(drop = True)
-
-        """
-        with open("E:/M5_Forecasting_Accuracy_cache/checkpoint2_v6.pkl", "rb") as f:
-            X_train, y_train, training_set_weights_sr = pickle.load(f)"""
-                    
+                            
         gc.collect()
+
+        """with open("E:/M5_Forecasting_Accuracy_cache/processed_data.pkl", "wb") as f:
+            pickle.dump((X_train, y_train, training_set_weights_sr), f)"""
 
         self.lgb_model.fit(X_train, y_train, sample_weights = training_set_weights_sr)
 

@@ -493,6 +493,14 @@ class DataLoader():
         sales_train_validation_df = sales_train_validation_df.sort_values(["id", "date"], ascending = True).reset_index(drop = True)
         print("    Merging datasets... done in", round(time.time() - st, 3), "secs")
         
+        # Add release date for each product
+        print("    Adding release date for each product...")
+        release_df = sell_prices_df.groupby(["store_id", "item_id"])["wm_yr_wk"].agg(["min"]).reset_index()
+        release_df.columns = ["store_id", "item_id", "release"]
+        sales_train_validation_df = sales_train_validation_df.merge(release_df, how = "left", on = ["store_id", "item_id"])
+        sales_train_validation_df["release"] = sales_train_validation_df["wm_yr_wk"] - sales_train_validation_df["release"]
+        sales_train_validation_df["release"] = sales_train_validation_df["release"].apply(lambda x: np.sign(x) * ((np.abs(x) // 100) * 52 + (np.abs(x) % 100))) # Convert value into a number of weeks
+
         st = time.time()
         print("    Encoding categorical features...")
         # Encode categorical features to integer
@@ -510,17 +518,21 @@ class DataLoader():
 
         # Stationarize the series
         orig_target_df = sales_train_validation_df[["id", "date", "demand"]]
-        #sales_train_validation_df["demand"] = sales_train_validation_df.groupby(["id"])["demand"].transform(lambda x: x - x.shift(1))
+        """sales_train_validation_df["shifted_demand"] = sales_train_validation_df.groupby(["id"])["demand"].transform(lambda x: x.shift(1))
+        sales_train_validation_df["demand"] = sales_train_validation_df.groupby(["id"])["demand"].transform(lambda x: x - x.shift(1))
+        orig_target_df["shifted_demand"] = sales_train_validation_df["shifted_demand"]
+        sales_train_validation_df.drop("shifted_demand", axis = 1, inplace = True)
+        dates_with_missing_vales_npa = sales_train_validation_df["date"].loc[sales_train_validation_df["demand"].isnull()].unique()
+        sales_train_validation_df = sales_train_validation_df.loc[~sales_train_validation_df["date"].isin(dates_with_missing_vales_npa)]"""
 
         # Remove outliers from the series
         sales_train_validation_df["demand_q99"] = sales_train_validation_df["id"].map(sales_train_validation_df.groupby(["id"])["demand"].quantile(0.99).to_dict())
-        #sales_train_validation_df["demand_q1"] = sales_train_validation_df["id"].map(sales_train_validation_df.groupby(["id"])["demand"].quantile(0.01).to_dict())
+        sales_train_validation_df["demand_q1"] = sales_train_validation_df["id"].map(sales_train_validation_df.groupby(["id"])["demand"].quantile(0.01).to_dict())
         nb_outliers = sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] > sales_train_validation_df["demand_q99"]].shape[0]
-        #nb_outliers += sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]].shape[0]
+        nb_outliers += sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]].shape[0]
         sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] > sales_train_validation_df["demand_q99"]] = sales_train_validation_df["demand_q99"].loc[sales_train_validation_df["demand"] > sales_train_validation_df["demand_q99"]] # Clip outliers
-        #sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]] = sales_train_validation_df["demand_q1"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]] # Clip outliers
-        #sales_train_validation_df.drop(["demand_q1", "demand_q99"], axis = 1, inplace = True)
-        sales_train_validation_df.drop(["demand_q99"], axis = 1, inplace = True)
+        sales_train_validation_df["demand"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]] = sales_train_validation_df["demand_q1"].loc[sales_train_validation_df["demand"] < sales_train_validation_df["demand_q1"]] # Clip outliers
+        sales_train_validation_df.drop(["demand_q1", "demand_q99"], axis = 1, inplace = True)
         print("Removed", nb_outliers, "outliers from the original series, which equals to ", round((nb_outliers / sales_train_validation_df.shape[0]) * 100, 3), "% data modified")
 
         if shift_target:
@@ -555,8 +567,9 @@ class DataLoader():
             target_df = training_set_df[["id", "date", "demand"]]
             truth_df = testing_set_df[["id", "date", "demand"]]
             
-            # Remove outlier removal step from truth
-            truth_df = orig_target_df.loc[orig_target_df["date"].isin(truth_df["date"])].reset_index(drop = True)
+            # Remove target processing from test set's target
+            truth_df.drop("demand", axis = 1, inplace = True)
+            truth_df = truth_df.merge(orig_target_df[["id", "date", "demand"]], how = "left", on = ["id", "date"])
 
             print("Generating validation set... done")
         else:

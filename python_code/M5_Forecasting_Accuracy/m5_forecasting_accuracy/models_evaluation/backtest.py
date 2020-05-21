@@ -126,17 +126,19 @@ class Backtest(object):
             # Return result
             yield (training_set_df, testing_set_df, new_target_df, truth_df)
 
-    def run(self): 
+    def run(self, orig_target_df): 
         """
         This method actually runs the backtest.
 
         Parameters
         ----------
-        None
+        orig_target_df: pd.DataFrame
+                Original values for the target of the data.
 
         Returns
         -------
-        None
+        metrics_df: pd.DataFrame
+                DataFrame containing the generated metrics.
         """
 
         # For each fold
@@ -160,6 +162,7 @@ class Backtest(object):
 
                 # Generate predictions for validation set
                 preds = model.predict(fold_testing_set_df, date_to_predict)
+                preds["demand"] = (orig_target_df["shifted_demand"] + preds["demand"]).apply(np.expm1)
 
                 # Score the predictions
                 preds2 = preds.copy()
