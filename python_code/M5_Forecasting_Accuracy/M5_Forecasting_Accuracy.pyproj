@@ -21,11 +21,15 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="dev\generate_grid.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="dev\kaggle_script.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="dev\WholePipeline_test6.py" />
     <Compile Include="dev\WholePipeline_test5.py" />
+    <Compile Include="m5_forecasting_accuracy\preprocessing\PreprocessingStep4.py" />
     <Compile Include="old\DraftModel.py">
       <SubType>Code</SubType>
     </Compile>

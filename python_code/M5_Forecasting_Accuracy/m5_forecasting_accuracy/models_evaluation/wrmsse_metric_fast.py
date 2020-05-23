@@ -32,7 +32,7 @@ class WRMSSEEvaluator(object):
     This class defines the metric used in the competition.
     """
 
-    def __init__(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, train_test_date_split):
+    def __init__(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, train_test_date_split, dept_id = None):
         """
         This is the class' constructor.
 
@@ -56,6 +56,10 @@ class WRMSSEEvaluator(object):
         self.sales_train_validation_df.sort_values("id", inplace = True)
         self.calendar_df = pd.read_csv(calendar_data_path_str)
         self.sell_prices_df = pd.read_csv(sell_prices_data_path_str)
+
+        # Filter by dept_id if needed
+        if dept_id is not None:
+            self.sales_train_validation_df = self.sales_train_validation_df.loc[self.sales_train_validation_df["cat_id"] == dept_id]
 
         # Generate a validation set if enable_validation is True
         train_cols_lst = [i for i in self.sales_train_validation_df.columns if not i.startswith("d_")] + self.calendar_df["d"].loc[self.calendar_df["date"] <= "2016-03-27"].tolist()
@@ -315,7 +319,7 @@ class WRMSSEEvaluator(object):
         return np.sum(self.contributors)
 
     def generate_dataset_weights(self, data_df):
-        weights = np.tile(self.weights.values.reshape((42840, 1)), 30490)
+        weights = np.tile(self.weights.values.reshape((self.weights.shape[0], 1)), self.sales_train_validation_df.shape[0])
         weights = pd.DataFrame(np.multiply(self.roll_mat_csr.todense(), weights), index = self.weights.index, columns = self.sales_train_validation_df["id"].tolist())
         #weights = np.square(weights).div(self.scale, axis = 0).sum()
         weights = weights.div(np.sqrt(self.scale), axis = 0).sum()

@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 
 from dev.files_paths import *
 from m5_forecasting_accuracy.data_loading.data_loader import DataLoader
-
+from m5_forecasting_accuracy.models_evaluation.wrmsse_metric_fast import WRMSSEEvaluator
 from m5_forecasting_accuracy.models_evaluation.metric_dashboard import WRMSSEDashboard
 from m5_forecasting_accuracy.models.lgbm_day_model import LGBMDayModel
 
@@ -53,8 +53,8 @@ if __name__ == "__main__":
         
     enable_validation = False
     max_lags = 57
-    test_days = 1
-    day_to_predict = 1 # This means we want to predict t + 1 knowing t
+    test_days = 28
+    day_to_predict = 28 # This means we want to predict t + 1 knowing t
 
     if enable_validation:
         date_to_predict = "2016-03-28"
@@ -68,21 +68,43 @@ if __name__ == "__main__":
     dl = DataLoader()
     training_set_df, target_df, testing_set_df, truth_df, orig_target_df, sample_submission_df = dl.load_data_v3(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, day_to_predict, train_test_date_split, enable_validation = enable_validation, first_day = 350, max_lags = max_lags)
 
-    print("Training set shape:", training_set_df.shape)
-    print("Testing set shape:", testing_set_df.shape)
+    print("Statistics for all data:")
+    print("    Training set shape:", training_set_df.shape)
+    print("    Testing set shape:", testing_set_df.shape)
 
     with open("E:/M5_Forecasting_Accuracy_cache/loaded_data_16052020.pkl", "wb") as f:
         pickle.dump((training_set_df, target_df, testing_set_df, truth_df, orig_target_df, sample_submission_df), f)
 
-    y_train = target_df["demand"].reset_index(drop = True)
+    all_preds_lst = []
+    for cat_id in training_set_df["cat_id"].unique().tolist():
+        start_time2 = time.time()
+        target_df = target_df.loc[training_set_df["cat_id"] == cat_id]
+        training_set_df = training_set_df.loc[training_set_df["cat_id"] == cat_id]
+        testing_set_df = testing_set_df.loc[testing_set_df["cat_id"] == cat_id]
 
-    day_model = LGBMDayModel(train_test_date_split, eval_start_date)
-    day_model.fit(training_set_df, y_train)
-    preds = day_model.predict(testing_set_df, date_to_predict)
-    #preds = preds.merge(orig_target_df[["id", "date", "shifted_demand"]], how = "left", on = ["id", "date"])
-    #preds["demand"] = preds["shifted_demand"] + preds["demand"]
-    #preds.drop("shifted_demand", axis = 1, inplace = True)
+        print("Training model for cat_id:", cat_id)
+        print("    Current training set shape:", training_set_df.shape)
+        gc.collect()
+
+        first_day_model = LGBMDayModel(train_test_date_split, eval_start_date, cat_id)
+        first_day_model.fit(training_set_df, target_df)
+        preds = first_day_model.predict(testing_set_df, date_to_predict)
+        #preds = preds.merge(orig_target_df[["id", "date", "shifted_demand"]], how = "left", on = ["id", "date"])
+        #preds["demand"] = preds["shifted_demand"] + preds["demand"]
+        #preds.drop("shifted_demand", axis = 1, inplace = True)
+        all_preds_lst.append(preds)
+
+        with open("E:/M5_Forecasting_Accuracy_cache/loaded_data_16052020.pkl", "rb") as f:
+            training_set_df, target_df, testing_set_df, truth_df, orig_target_df, sample_submission_df = pickle.load(f)
+
+        print("Model for cat_id:", cat_id, "done in:", time.time() - start_time2, "seconds")
+
+    preds = pd.concat(all_preds_lst, axis = 0)
+    preds = testing_set_df[["id", "date"]].merge(preds, how = "left", on = ["id", "date"])
+
     print("*** Train + predict: Executed in:", time.time() - start_time, "seconds ***")
+
+    ## TODO: Try Exponential Moving Average for lags.
 
     # Attach "date" to X_train for cross validation.
 
@@ -91,7 +113,7 @@ if __name__ == "__main__":
     #target_df = target_df.sort_values(["id", "date"], ascending = True).reset_index(drop = True)
 
     # Feature importance
-    feature_importance_df = day_model.lgb_model.get_features_importance()
+    feature_importance_df = first_day_model.lgb_model.get_features_importance()
     feature_importance_df.to_excel("E:/draft_lgb_importances.xlsx")
 
     if enable_validation:
@@ -108,6 +130,8 @@ if __name__ == "__main__":
         """
 
         # Score the predictions
+        evaluator = WRMSSEEvaluator(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, train_test_date_split)
+
         preds2 = preds.copy()
         preds2.columns = ["id", "date", "preds"]
         preds_rmse_by_date_df = preds2.merge(truth_df, how = "left", on = ["id", "date"])
@@ -121,7 +145,7 @@ if __name__ == "__main__":
         best_preds_piv.set_index("id", inplace = True)
         best_preds_piv.columns = ["F" + str(i) for i in range(1, 29)]
         truth_piv.columns = ["F" + str(i) for i in range(1, 29)]
-        print("Validation WRMSSE:", round(day_model.evaluator.wrmsse(best_preds_piv, truth_piv, score_only = True), 6))
+        print("Validation WRMSSE:", round(evaluator.wrmsse(best_preds_piv, truth_piv, score_only = True), 6))
 
         """
         with open("E:/M5_Forecasting_Accuracy_cache/checkpoint4_v4_best_preds.pkl", "rb") as f:
@@ -182,28 +206,28 @@ if __name__ == "__main__":
         # 0 2016-03-28         1.891767    1.772304
 
         d = WRMSSEDashboard(PLOTS_DIRECTORY_PATH_str + "dashboard/")
-        d.create_dashboard(day_model.evaluator, best_preds_piv.reset_index())
+        d.create_dashboard(evaluator, best_preds_piv.reset_index())
 
         # TODO: Look to FOODS_3 items as they seems to have the largest error on Kaggle LB
     else:
         with open("E:/M5_Forecasting_Accuracy_cache/kaggle_preds.pkl", "wb") as f:
             pickle.dump(preds, f)
-        best_submission_df = pd.read_csv("D:/Projets_Data_Science/Competitions/Kaggle/M5_Forecasting_Accuracy/predictions/submission_kaggle_16052020_LB_0.47397.csv")
+        """best_submission_df = pd.read_csv("D:/Projets_Data_Science/Competitions/Kaggle/M5_Forecasting_Accuracy/predictions/submission_kaggle_16052020_LB_0.47397.csv")
         preds.drop("date", axis = 1, inplace = True)
         preds.columns = ["id", "F1"]
         best_submission_df.drop("F1", axis = 1, inplace = True)
         best_submission_df = best_submission_df.merge(preds, how = "left", on = "id").fillna(0.0)
         best_submission_df = best_submission_df[["id"] + ["F" + str(i) for i in range(1, 29)]]
-        best_submission_df.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_21052020.csv", index = False)
+        best_submission_df.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_22052020.csv", index = False)"""
         
-        """preds = preds.pivot(index = "id", columns = "date", values = "demand").reset_index()
+        preds = preds.pivot(index = "id", columns = "date", values = "demand").reset_index()
         preds.columns = ["id"] + ["F" + str(d + 1) for d in range(28)]
 
         evals = sample_submission_df[sample_submission_df["id"].str.endswith("evaluation")]
         vals = sample_submission_df[["id"]].merge(preds, how="inner", on="id")
         final = pd.concat([vals, evals])
 
-        final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_15052020.csv", index = False)"""
+        final.to_csv(PREDICTIONS_DIRECTORY_PATH_str + "submission_kaggle_22052020.csv", index = False)
 
     # Stop the timer and print the exectution time
     print("*** Test finished: Executed in:", time.time() - start_time, "seconds ***")

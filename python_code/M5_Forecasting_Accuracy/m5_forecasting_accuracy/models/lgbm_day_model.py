@@ -26,7 +26,7 @@ class LGBMDayModel(object):
     This class contains everything needed to train a model and make predictions for one day in the future.
     """
 
-    def __init__(self, train_test_date_split, eval_start_date):
+    def __init__(self, train_test_date_split, eval_start_date, dept_id):
         """
         This is the class' constructor.
 
@@ -66,10 +66,10 @@ class LGBMDayModel(object):
             "verbosity": -1
         }
 
-        self.categorical_features_lst = ["state_id", "store_id", "item_id", "cat_id", "event_type_1", "event_name_1", "weekday", "dept_id"]
+        self.categorical_features_lst = ["state_id", "store_id", "item_id", "event_type_1", "event_name_1", "weekday", "dept_id"]
 
         self.useless_features_lst = ["wm_yr_wk", "quarter", "id", "shifted_demand", "d"]
-        self.evaluator = WRMSSEEvaluator(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, train_test_date_split)
+        self.evaluator = WRMSSEEvaluator(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, train_test_date_split, dept_id)
         #self.lgb_model = LGBMRegressor(self.lgb_params, early_stopping_rounds = 200, custom_eval_function = self.evaluator.lgb_feval, custom_objective_function = self.evaluator.lgb_fobj, maximize = False, nrounds = 3000, eval_split_type = "time", eval_start_date = eval_start_date, eval_date_col = "date", verbose_eval = 100, enable_cv = False, categorical_feature = self.categorical_features_lst)
         self.lgb_model = LGBMRegressor(self.lgb_params, early_stopping_rounds = 200, custom_eval_function = self.evaluator.lgb_feval, maximize = False, nrounds = 3000, eval_split_type = "time", eval_start_date = eval_start_date, eval_date_col = "date", verbose_eval = 100, enable_cv = False, categorical_feature = self.categorical_features_lst)
     
@@ -90,6 +90,7 @@ class LGBMDayModel(object):
         None
         """
         
+        y_train = y_train["demand"].reset_index(drop = True)
         X_train = self.prp.fit_transform(X_train, y_train) # y is not used here
         training_set_weights_sr = self.evaluator.generate_dataset_weights(X_train)
         X_train.drop(self.useless_features_lst, axis = 1, inplace = True)

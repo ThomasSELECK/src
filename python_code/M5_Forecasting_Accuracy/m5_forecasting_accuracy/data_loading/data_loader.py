@@ -467,7 +467,7 @@ class DataLoader():
 
         # For `sales_train_validation`
         tr_last = 1913
-        test_set_days_length = 1 #28
+        test_set_days_length = 28 #1 #28
         valid_days_lst = [f"d_{day}" for day in range(first_day, tr_last + 1)]
         id_columns_lst = ["id", "item_id", "dept_id", "store_id", "cat_id", "state_id"]
         sales_train_validation_dtype_dict = {numcol: "float32" for numcol in valid_days_lst} 
@@ -509,7 +509,7 @@ class DataLoader():
             if col_dtype == "category":
                 columns_to_encode_lst.append(col)
         
-        columns_to_encode_lst = list(set(columns_to_encode_lst)) # Remove duplicates
+        columns_to_encode_lst = list(set(columns_to_encode_lst) - {"cat_id"}) # Remove duplicates
 
         for col in columns_to_encode_lst:
             sales_train_validation_df[col] = sales_train_validation_df[col].cat.codes.astype("int16")

@@ -9,7 +9,7 @@
 #                                                                             #
 # Author: Thomas SELECK                                                       #
 # e-mail: thomas.seleck@outlook.fr                                            #
-# Date: 2020-04-20                                                            #
+# Date: 2020-05-23                                                            #
 # Version: 1.0.0                                                              #
 ###############################################################################
 
@@ -28,7 +28,7 @@ from joblib import Parallel, delayed
 
 from m5_forecasting_accuracy.data_loading.data_loader import DataLoader
 
-class PreprocessingStep3(BaseEstimator, TransformerMixin):
+class PreprocessingStep4(BaseEstimator, TransformerMixin):
     """
     This class defines the first preprocessing step.
     """
@@ -46,25 +46,14 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
         None
         """
 
+        self.num_cores = 8 #mp.cpu_count()
+
         self.dt_col = dt_col
         self.keep_last_train_days = keep_last_train_days # Number of rows at the end of the train set to keep for appending at the beginning of predict data
         self._last_train_rows = None
         self._orig_earliest_date = None
         self._is_train_data = False # Whether we are processing train data
         self._cols_dtype_dict = None
-
-    def _max_consecutive_nonzero(self, x):
-        a_ext = np.concatenate(( [0], x, [0] ))
-        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
-        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
-        return a_ext.cumsum()[1:-1].max()
-
-    def _max_consecutive_nonzero_at_end(self, x):
-        a_ext = np.concatenate(( [0], x, [0] ))
-        idx = np.flatnonzero(a_ext[1:] != a_ext[:-1])
-        a_ext[1:][idx[1::2]] = idx[::2] - idx[1::2]
-        a_cum = a_ext.cumsum()
-        return int(a_cum[1:-1].max() == a_cum[-2])
 
     def generate_lags(self, data_df, d_shift, d_window, agg_type = "mean"):
         if agg_type == "mean":
@@ -84,10 +73,9 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
         features_args_lst += [(28, i, "std") for i in [7, 14, 30, 60, 180]]
         features_args_lst += [(28, i, "sum") for i in [7, 14, 30, 60, 180]]
         features_args_lst += [(d_shift, d_window, "mean") for d_shift in [1, 7, 14] for d_window in [7, 14, 30, 60]]
-        num_cores = mp.cpu_count()
         data_df = X[["id", "shifted_demand"]].copy()
 
-        lag_features_df = pd.concat(Parallel(n_jobs = num_cores, max_nbytes = None)(delayed(self.generate_lags)(data_df.copy(), d_shift, d_window, agg_type) for d_shift, d_window, agg_type in features_args_lst), axis = 1)
+        lag_features_df = pd.concat(Parallel(n_jobs = self.num_cores, max_nbytes = None)(delayed(self.generate_lags)(data_df.copy(), d_shift, d_window, agg_type) for d_shift, d_window, agg_type in features_args_lst), axis = 1)
         X = pd.concat([X, lag_features_df], axis = 1)
             
         return X
@@ -115,6 +103,7 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
         X["price_momentum_m"] = X["sell_price"] / X.groupby(["store_id", "item_id", "month"])["sell_price"].transform("mean")
         X["price_momentum_y"] = X["sell_price"] / X.groupby(["store_id", "item_id", "year"])["sell_price"].transform("mean")
 
+        """
         # Price features
         X["shift_price_t1"] = X.groupby(["id"])["sell_price"].transform(lambda x: x.shift(1))
         X["price_change_t1"] = (X["shift_price_t1"] - X["sell_price"]) / (X["shift_price_t1"])
@@ -127,6 +116,7 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
         X.drop(["rolling_price_max_t365", "shift_price_t1"], axis = 1, inplace = True)
 
         X = DataLoader.reduce_mem_usage(X, "data_df") # Need to take same dtypes as train
+        """
 
         return X
 
@@ -143,7 +133,7 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
         return res
 
     def create_target_encoding_features(self, X):
-        """group_ids = [
+        group_ids = [
             ["state_id"],
             ["store_id"],
             ["cat_id"],
@@ -155,26 +145,13 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
             ["item_id"],
             ["item_id", "state_id"],
             ["item_id", "store_id"]
-        ]"""
-        group_ids = [
-            ["state_id"],
-            ["store_id"],
-            ["dept_id"],
-            ["state_id", "cat_id"],
-            ["state_id", "dept_id"],
-            ["store_id", "cat_id"],
-            ["store_id", "dept_id"],
-            ["item_id"],
-            ["item_id", "state_id"],
-            ["item_id", "store_id"]
         ]
 
-        num_cores = mp.cpu_count()
         data_df = X[["id", "shifted_demand", "dept_id", "state_id", "cat_id", "item_id", "store_id"]].copy()
         features_args_lst = [(cols, "mean") for cols in group_ids] 
         features_args_lst += [(cols, "std") for cols in group_ids]
 
-        target_encoding_features_df = pd.concat(Parallel(n_jobs = num_cores, max_nbytes = None)(delayed(self.generate_target_encodings)(data_df.copy(), cols, agg_type) for cols, agg_type in features_args_lst), axis = 1)
+        target_encoding_features_df = pd.concat(Parallel(n_jobs = self.num_cores, max_nbytes = None)(delayed(self.generate_target_encodings)(data_df.copy(), cols, agg_type) for cols, agg_type in features_args_lst), axis = 1)
         X = pd.concat([X, target_encoding_features_df], axis = 1)
 
         return X
@@ -235,76 +212,22 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
         print("    Creating lag features...")
         X = self.create_lag_features(X)
 
+        lag_days_lst = [col for col in range(28, 28 + 15)]
+        for l in lag_days_lst:
+            training_set_df["sales_lag_" + str(l)] = training_set_df.groupby("id")["shifted_demand"].transform(lambda x: x.shift(l - 1))
+        
         #print("    Creating target encoding features...")
-        #X = self.create_target_encoding_features(X)
-        #print("Creating target encoding features DISABLED! To reduce memory usage.")
+        X = self.create_target_encoding_features(X)
 
-        print("    Creating lags and rolling window features...")
-        # Rolling demand features
-        for shift in [0, 1, 2, 6, 7, 14]:
-            X[f"shift_t{shift}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.shift(shift))
-            
-        """for size in [7, 30, 60, 90, 180]:
-            X[f"rolling_mean_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).mean())
-            X[f"rolling_std_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).std())
-            X[f"rolling_sum_t{size}"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-            
-        X["rolling_skew_t30"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(30).skew())
-        X["rolling_kurt_t30"] = X.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(30).kurt())
-        """
-
-        # Time-related features
-        X[self.dt_col] = pd.to_datetime(X[self.dt_col])
-        attrs = ["year", "quarter", "month", "week", "day", "dayofweek", "is_year_end", "is_year_start", "is_quarter_end", "is_quarter_start", "is_month_end"]
-
-        for attr in attrs:
-            dtype = np.int16 if attr == "year" else np.int8
-            X[attr] = getattr(X[self.dt_col].dt, attr).astype(dtype)
-
-        X["is_weekend"] = X["dayofweek"].isin([5, 6]).astype(np.int8)
-                
-        ### New features
-        """
-        for size in [7, 30]:
-            X[f"store_rolling_sum_t{size}"] = X.groupby(["store_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-            X[f"cat_rolling_sum_t{size}"] = X.groupby(["cat_id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-            
-        X["monthly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("M"))["shifted_demand"].cumsum()
-        X["weekly_demand"] = X.groupby(pd.to_datetime(X["date"]).dt.to_period("W"))["shifted_demand"].cumsum()
-
-        tmp = X[["id", "shifted_demand"]]
-        tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
-
-        for size in [7, 30]:
-            X[f"nb_zeros_rolling_t{size}"] = tmp.groupby(["id"])["shifted_demand"].transform(lambda x: x.rolling(size).sum())
-
-        # Bin sell_price
-        X["binned_sell_price"] = 0
-        X["binned_sell_price"].loc[X["sell_price"] <= 0.80] = 6
-        X["binned_sell_price"].loc[(X["sell_price"] > 0.80) & (X["sell_price"] <= 1)] = 5
-        X["binned_sell_price"].loc[(X["sell_price"] > 1) & (X["sell_price"] <= 10)] = 4
-        X["binned_sell_price"].loc[(X["sell_price"] > 10) & (X["sell_price"] <= 20)] = 2
-        X["binned_sell_price"].loc[(X["sell_price"] > 20) & (X["sell_price"] <= 40)] = 3
-        X["binned_sell_price"].loc[X["sell_price"] > 40] = 1
-        """
-
-        X["monthly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
-        X["weekly_demand_by_id"] = X.groupby(["id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
-        X["monthly_demand_by_store"] = X.groupby(["store_id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
-        X["weekly_demand_by_store"] = X.groupby(["store_id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
-        X["monthly_demand_by_item_id"] = X.groupby(["item_id", pd.to_datetime(X["date"]).dt.to_period("M")])["shifted_demand"].cumsum()
-        X["weekly_demand_by_item_id"] = X.groupby(["item_id", pd.to_datetime(X["date"]).dt.to_period("W")])["shifted_demand"].cumsum()
-
-        # Max consecutive zeros length
-        tmp = X[["id", "shifted_demand"]]
-        tmp["shifted_demand"] = tmp["shifted_demand"].apply(lambda x: int(x == 0))
-        tmp2 = tmp.groupby(["id"])["shifted_demand"].apply(self._max_consecutive_nonzero).reset_index()
-        tmp3 = tmp.groupby(["id"])["shifted_demand"].apply(self._max_consecutive_nonzero_at_end).reset_index()
-        tmp2 = tmp2.merge(tmp3, how = "left", on = "id")
-        tmp2.columns = ["id", "max_consecutive_zeros", "max_consecutive_zeros_at_end"]
-        X = X.merge(tmp2, how = "left", on = "id")
-
-        X.drop(["cat_id", "is_quarter_start", "event_type_2", "is_month_end", "is_quarter_end", "event_name_2", "is_year_start", "max_consecutive_zeros_at_end"], axis = 1, inplace = True)
+        # Make some features from date
+        X["tm_d"] = X["date"].dt.day.astype(np.int8)
+        X["tm_w"] = X["date"].dt.week.astype(np.int8)
+        X["tm_m"] = X["date"].dt.month.astype(np.int8)
+        X["tm_y"] = X["date"].dt.year
+        X["tm_y"] = (X["tm_y"] - X["tm_y"].min()).astype(np.int8)
+        X["tm_wm"] = X["tm_d"].apply(lambda x: ceil(x / 7)).astype(np.int8)
+        X["tm_dw"] = X["date"].dt.dayofweek.astype(np.int8)
+        X["tm_w_end"] = (X["tm_dw"] >= 5).astype(np.int8)
                 
         if self._last_train_rows is not None and not self._is_train_data:
             X = X.loc[pd.to_datetime(X["date"]) >= self._orig_earliest_date]
@@ -319,5 +242,7 @@ class PreprocessingStep3(BaseEstimator, TransformerMixin):
             self._is_train_data = False
                 
         print("Preprocessing data... done in", round(time.time() - st, 3), "secs")
+
+        X = X[["item_id", "dept_id", "cat_id", "release", "sell_price", "price_max", "price_min", "price_std", "price_mean", "price_norm", "price_nunique", "item_nunique", "price_momentum", "price_momentum_m", "price_momentum_y", "event_name_1", "event_type_1", "event_name_2", "event_type_2", "snap_CA", "snap_TX", "snap_WI", "tm_d", "tm_w", "tm_m", "tm_y", "tm_wm", "tm_dw", "tm_w_end", "enc_cat_id_mean", "enc_cat_id_std", "enc_dept_id_mean", "enc_dept_id_std", "enc_item_id_mean", "enc_item_id_std", "sales_lag_28", "sales_lag_29", "sales_lag_30", "sales_lag_31", "sales_lag_32", "sales_lag_33", "sales_lag_34", "sales_lag_35", "sales_lag_36", "sales_lag_37", "sales_lag_38", "sales_lag_39", "sales_lag_40", "sales_lag_41", "sales_lag_42", "rolling_mean_28_7", "rolling_std_28_7", "rolling_mean_28_14", "rolling_std_28_14", "rolling_mean_28_30", "rolling_std_28_30", "rolling_mean_28_60", "rolling_std_28_60", "rolling_mean_28_180", "rolling_std_28_180", "rolling_mean_1_7", "rolling_mean_1_14", "rolling_mean_1_30", "rolling_mean_1_60", "rolling_mean_7_7", "rolling_mean_7_14", "rolling_mean_7_30", "rolling_mean_7_60", "rolling_mean_14_7", "rolling_mean_14_14", "rolling_mean_14_30", "rolling_mean_14_60"]]
         
         return X

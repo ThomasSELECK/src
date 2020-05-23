@@ -2,185 +2,260 @@
 import numpy as np
 import pandas as pd
 import os, sys, gc, time, warnings, pickle, psutil, random
-
+import lightgbm as lgb
 from math import ceil
-
+import time
+from joblib import Parallel, delayed
 from sklearn.preprocessing import LabelEncoder
 import multiprocessing as mp
 from joblib import Parallel, delayed
 
 warnings.filterwarnings('ignore')
 
-## Simple "Memory profilers" to see memory usage
-def get_memory_usage():
-    return np.round(psutil.Process(os.getpid()).memory_info()[0]/2.**30, 2) 
-        
-def sizeof_fmt(num, suffix='B'):
-    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
-        if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0
-    return "%.1f%s%s" % (num, 'Yi', suffix)
-
-def reduce_mem_usage(df, verbose=True):
-    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
-    start_mem = df.memory_usage().sum() / 1024**2    
-    for col in df.columns:
-        col_type = df[col].dtypes
-        if col_type in numerics:
-            c_min = df[col].min()
-            c_max = df[col].max()
-            if str(col_type)[:3] == 'int':
-                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
-                    df[col] = df[col].astype(np.int8)
-                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
-                       df[col] = df[col].astype(np.int16)
-                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
-                    df[col] = df[col].astype(np.int32)
-                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
-                    df[col] = df[col].astype(np.int64)  
-            else:
-                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
-                    df[col] = df[col].astype(np.float16)
-                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
-                    df[col] = df[col].astype(np.float32)
-                else:
-                    df[col] = df[col].astype(np.float64)    
-    end_mem = df.memory_usage().sum() / 1024**2
-    if verbose: print('Mem. usage decreased to {:5.2f} Mb ({:.1f}% reduction)'.format(end_mem, 100 * (start_mem - end_mem) / start_mem))
+# Seed to make all processes deterministic
+def seed_everything(seed=0):
+    random.seed(seed)
+    np.random.seed(seed)
+    
+## Multiprocess Runs
+def df_parallelize_run(func, t_split, base_test):
+    num_cores = mp.cpu_count()
+    df = pd.concat(Parallel(n_jobs = num_cores, max_nbytes = None)(delayed(func)(ts, base_test.copy()) for ts in t_split), axis = 1)
     return df
 
-## Merging by concat to not lose dtypes
-def merge_by_concat(df1, df2, merge_on):
-    merged_gf = df1[merge_on]
-    merged_gf = merged_gf.merge(df2, on=merge_on, how='left')
-    new_columns = [col for col in list(merged_gf) if col not in merge_on]
-    df1 = pd.concat([df1, merged_gf[new_columns]], axis=1)
-    return df1
-
-
-def create_prices_features(self, X):
-    # We can do some basic aggregations
-    X["price_max"] = X.groupby(["store_id", "item_id"])["sell_price"].transform("max")
-    X["price_min"] = X.groupby(["store_id", "item_id"])["sell_price"].transform("min")
-    X["price_std"] = X.groupby(["store_id", "item_id"])["sell_price"].transform("std")
-    X["price_mean"] = X.groupby(["store_id", "item_id"])["sell_price"].transform("mean")
-
-    # and do price normalization (min/max scaling)
-    X["price_norm"] = X["sell_price"] / X["price_max"]
-
-    # Some items are can be inflation dependent
-    # and some items are very "stable"
-    X["price_nunique"] = X.groupby(["store_id", "item_id"])["sell_price"].transform("nunique")
-    X["item_nunique"] = X.groupby(["store_id", "sell_price"])["item_id"].transform("nunique")
-
-    # Now we can add price "momentum" (some sort of)
-    # Shifted by week 
-    # by month mean
-    # by year mean
-    X["price_momentum"] = X["sell_price"] / X.groupby(["store_id", "item_id"])["sell_price"].transform(lambda x: x.shift(1))
-    X["price_momentum_m"] = X["sell_price"] / X.groupby(["store_id", "item_id", "month"])["sell_price"].transform("mean")
-    X["price_momentum_y"] = X["sell_price"] / X.groupby(["store_id", "item_id", "year"])["sell_price"].transform("mean")
-
-    return X
-
-def create_lag_features(self, X):
-    features_args_lst = [(28, i, "mean") for i in [7, 14, 30, 60, 180]] + [(28, i, "std") for i in [7, 14, 30, 60, 180]] + [(d_shift, d_window, "mean") for d_shift in [1, 7, 14] for d_window in [7, 14, 30, 60]]
-    num_cores = mp.cpu_count()
-    data_df = X[["id", "shifted_demand"]].copy()
-
-    start_time = time.time()
-    lag_features_df = pd.concat(Parallel(n_jobs = num_cores)(delayed(generate_lags)(data_df, d_shift, d_window, agg_type) for d_shift, d_window, agg_type in features_args_lst), axis = 1)
-    X = pd.concat([X, lag_features_df], axis = 1)
-    print('%0.2f min: Lags' % ((time.time() - start_time) / 60))
-
-    X = DataLoader.reduce_mem_usage(X, "data_df") # Need to take same dtypes as train
+# Helper to load data by store ID
+# Read data
+def get_data_by_store(store):
+    # Read and contact basic feature
+    df = pd.concat([pd.read_pickle(BASE), pd.read_pickle(PRICE).iloc[:,2:], pd.read_pickle(CALENDAR).iloc[:,2:]], axis=1)
     
-    return X
+    # Leave only relevant store
+    df = df[df['store_id']==store]
 
-def generate_lags(data_df, d_shift, d_window, agg_type = "mean"):
-    if agg_type == "mean":
-        res =  data_df.groupby(["id"])["shifted_demand"].transform(lambda x: x.shift(d_shift - 1).rolling(d_window).mean()).astype(np.float16)
-        res = res.rename("rolling_mean_" + str(d_shift) + "_" + str(d_window))
-    elif agg_type == "std":
-        res = data_df.groupby(["id"])["shifted_demand"].transform(lambda x: x.shift(d_shift - 1).rolling(d_window).std()).astype(np.float16)
-        res = res.rename("rolling_std_" + str(d_shift) + "_" + str(d_window))
+    # With memory limits we have to read lags and mean encoding features
+    # separately and drop items that we don't need.
+    # As our Features Grids are aligned we can use index to keep only necessary rows
+    # Alignment is good for us as concat uses less memory than merge.
+    df2 = pd.read_pickle(MEAN_ENC)[mean_features]
+    df2 = df2[df2.index.isin(df.index)]
+    
+    df3 = pd.read_pickle(LAGS).iloc[:,3:]
+    df3 = df3[df3.index.isin(df.index)]
+    
+    df = pd.concat([df, df2], axis=1)
+    del df2 # to not reach memory limit 
+    
+    df = pd.concat([df, df3], axis=1)
+    del df3 # to not reach memory limit 
+    
+    # Create features list
+    features = [col for col in list(df) if col not in remove_features]
+    df = df[['id','d',TARGET]+features]
+    
+    # Skipping first n rows
+    df = df[df['d']>=START_TRAIN].reset_index(drop=True)
+    
+    return df, features
 
-    return res
+# Recombine Test set after training
+def get_base_test():
+    base_test = pd.DataFrame()
 
-def create_target_encoding_features(self, X):
-    group_ids = [
-        ["state_id"],
-        ["store_id"],
-        ["cat_id"],
-        ["dept_id"],
-        ["state_id", "cat_id"],
-        ["state_id", "dept_id"],
-        ["store_id", "cat_id"],
-        ["store_id", "dept_id"],
-        ["item_id"],
-        ["item_id", "state_id"],
-        ["item_id", "store_id"]
-    ]
+    for store_id in STORES_IDS:
+        temp_df = pd.read_pickle("E:/tmp/kernels/aux_model/" + 'test_' + store_id + '.pkl')
+        temp_df['store_id'] = store_id
+        base_test = pd.concat([base_test, temp_df]).reset_index(drop=True)
+    
+    return base_test
 
-    for col in group_ids:
-        col_name = "_" + "_".join(col) + "_"
-        X["enc" + col_name + "mean"] = X.groupby(col)["shifted_demand"].transform("mean").astype(np.float16)
-        X["enc" + col_name + "std"] = X.groupby(col)["shifted_demand"].transform("std").astype(np.float16)
 
-    return X
+# Helper to make dynamic rolling lags
+def make_lag(LAG_DAY):
+    lag_df = base_test[['id','d',TARGET]]
+    col_name = 'sales_lag_'+str(LAG_DAY)
+    lag_df[col_name] = lag_df.groupby(['id'])[TARGET].transform(lambda x: x.shift(LAG_DAY)).astype(np.float16)
+    return lag_df[[col_name]]
+
+def make_lag_roll(LAG_DAY, base_test):
+    shift_day = LAG_DAY[0]
+    roll_wind = LAG_DAY[1]
+    lag_df = base_test[['id','d',TARGET]]
+    col_name = 'rolling_mean_tmp_'+str(shift_day)+'_'+str(roll_wind)
+    lag_df[col_name] = lag_df.groupby(['id'])[TARGET].transform(lambda x: x.shift(shift_day).rolling(roll_wind).mean())
+    return lag_df[[col_name]]
 
 # Call to main
 if __name__ == "__main__":
+    start_time2 = time.time()
     # Vars
-    TARGET = 'demand'         # Our main target
-    END_TRAIN = 1913         # Last day in train set
-    MAIN_INDEX = ['id','d']  # We can identify item by these columns
+    VER = 1                          # Our model version
+    SEED = 42                        # We want all things
+    seed_everything(SEED)            # to be as deterministic 
+    lgb_params = {
+                    "boosting_type": "gbdt",
+                    "objective": "tweedie",
+                    "tweedie_variance_power": 1.1,
+                    "metric": "rmse",
+                    "subsample": 0.5,
+                    "subsample_freq": 1,
+                    "learning_rate": 0.03,
+                    "num_leaves": 2**11-1,
+                    "min_data_in_leaf": 2**12-1,
+                    "feature_fraction": 0.5,
+                    "max_bin": 100,
+                    "n_estimators": 1400,
+                    "boost_from_average": False,
+                    "verbose": -1,
+                } 
+    lgb_params["seed"] = SEED        # as possible
+    N_CORES = psutil.cpu_count()     # Available CPU cores
 
-    # Load Data
-    print('Load Main Data')
+    #LIMITS and const
+    TARGET      = "sales"            # Our target
+    START_TRAIN = 0                  # We can skip some rows (Nans/faster training)
+    END_TRAIN   = 1913               # End day of our train set
+    P_HORIZON   = 28                 # Prediction horizon
+    USE_AUX     = True               # Use or not pretrained models
 
-    # Here are reafing all our data without any limitations and dtype modification
-    train_df = pd.read_csv('D:/Projets_Data_Science/Competitions/Kaggle/M5_Forecasting_Accuracy/data/raw/sales_train_validation.csv')
-    X = pd.read_csv('D:/Projets_Data_Science/Competitions/Kaggle/M5_Forecasting_Accuracy/data/raw/sell_prices.csv')
-    calendar_df = pd.read_csv('D:/Projets_Data_Science/Competitions/Kaggle/M5_Forecasting_Accuracy/data/raw/calendar.csv')
+    #FEATURES to remove
+    ## These features lead to overfit
+    ## or values not present in test set
+    remove_features = ["id","state_id","store_id", "date","wm_yr_wk","d",TARGET]
+    mean_features   = ["enc_cat_id_mean","enc_cat_id_std", "enc_dept_id_mean","enc_dept_id_std", "enc_item_id_mean","enc_item_id_std"] 
 
-    with open("E:/M5_Forecasting_Accuracy_cache/loaded_data_16052020.pkl", "rb") as f:
-        training_set_df, target_df, testing_set_df, truth_df, orig_target_df, sample_submission_df = pickle.load(f)
+    #PATHS for Features
+    ORIGINAL = "D:/Projets_Data_Science/Competitions/Kaggle/M5_Forecasting_Accuracy/data/raw/"
+    BASE     = "E:/tmp/kernels/grid_part_1.pkl"
+    PRICE    = "E:/tmp/kernels/grid_part_2.pkl"
+    CALENDAR = "E:/tmp/kernels/grid_part_3.pkl"
+    LAGS     = "E:/tmp/kernels/lags_df_28.pkl"
+    MEAN_ENC = "E:/tmp/kernels/mean_encoding_df.pkl"
 
-    training_set_df["demand"] = orig_target_df["demand"]
+    # AUX(pretrained) Models paths
+    AUX_MODELS = "E:/tmp/kernels/aux_model/"
 
-    # Make Grid
-    print('Create Grid')
+    #STORES ids
+    STORES_IDS = pd.read_csv(ORIGINAL + "sales_train_validation.csv")["store_id"]
+    STORES_IDS = list(STORES_IDS.unique())
 
-    ########################### Apply on grid_df
-    #################################################################################
-    # lets read grid from 
-    # https://www.kaggle.com/kyakovlev/m5-simple-fe
-    # to be sure that our grids are aligned by index
-    grid_df = pd.read_pickle('../input/m5-simple-fe/grid_part_1.pkl')
-    grid_df[TARGET][grid_df['d']>(1913-28)] = np.nan
-    base_cols = list(grid_df)
+    #SPLITS for lags creation
+    SHIFT_DAY = 28
+    N_LAGS = 15
+    LAGS_SPLIT = [col for col in range(SHIFT_DAY,SHIFT_DAY+N_LAGS)]
+    ROLS_SPLIT = []
+    for i in [1,7,14]:
+        for j in [7,14,30,60]:
+            ROLS_SPLIT.append([i,j])
 
-    icols =  [
-                ['state_id'],
-                ['store_id'],
-                ['cat_id'],
-                ['dept_id'],
-                ['state_id', 'cat_id'],
-                ['state_id', 'dept_id'],
-                ['store_id', 'cat_id'],
-                ['store_id', 'dept_id'],
-                ['item_id'],
-                ['item_id', 'state_id'],
-                ['item_id', 'store_id']
-                ]
+    # Train Models
+    for store_id in STORES_IDS:
+        print('Train', store_id)
+    
+        # Get grid for current store
+        grid_df, features_columns = get_data_by_store(store_id)
+    
+        # Masks for 
+        # Train (All data less than 1913)
+        # "Validation" (Last 28 days - not real validation set)
+        # Test (All data greater than 1913 day, with some gap for recursive features)
+        train_mask = grid_df['d']<=END_TRAIN
+        valid_mask = train_mask & (grid_df['d'] > (END_TRAIN - P_HORIZON))
+        preds_mask = grid_df['d'] > (END_TRAIN - 100)
+    
+        # Apply masks and save lgb dataset as bin
+        # to reduce memory spikes during dtype convertations
+        # https://github.com/Microsoft/LightGBM/issues/1032
+        # "To avoid any conversions, you should always use np.float32"
+        # or save to bin before start training
+        # https://www.kaggle.com/c/talkingdata-adtracking-fraud-detection/discussion/53773
+        train_data = lgb.Dataset(grid_df[train_mask][features_columns], label = grid_df[train_mask][TARGET])
+        valid_data = lgb.Dataset(grid_df[valid_mask][features_columns], label=grid_df[valid_mask][TARGET])
+    
+        # Saving part of the dataset for later predictions
+        # Removing features that we need to calculate recursively 
+        grid_df = grid_df[preds_mask].reset_index(drop=True)
+        keep_cols = [col for col in list(grid_df) if '_tmp_' not in col]
+        grid_df = grid_df[keep_cols]
+        grid_df.to_pickle("E:/tmp/kernels/aux_model/" + 'test_' + store_id + '.pkl')
+        del grid_df
+    
+        # Launch seeder again to make lgb training 100% deterministic
+        # with each "code line" np.random "evolves" 
+        # so we need (may want) to "reset" it
+        seed_everything(SEED)
+        estimator = lgb.train(lgb_params, train_data, valid_sets = [valid_data], verbose_eval = 100)
+    
+        # Save model - it's not real '.bin' but a pickle file
+        # estimator = lgb.Booster(model_file='model.txt')
+        # can only predict with the best iteration (or the saving iteration)
+        # pickle.dump gives us more flexibility
+        # like estimator.predict(TEST, num_iteration=100)
+        # num_iteration - number of iteration want to predict with, 
+        # NULL or <= 0 means use best iteration
+        model_name = "E:/tmp/kernels/aux_model/" + 'lgb_model_' + store_id + '_v' + str(VER) + '.bin'
+        pickle.dump(estimator, open(model_name, 'wb'))
 
-    for col in icols:
-        print('Encoding', col)
-        col_name = '_'+'_'.join(col)+'_'
-        grid_df['enc'+col_name+'mean'] = grid_df.groupby(col)[TARGET].transform('mean').astype(np.float16)
-        grid_df['enc'+col_name+'std'] = grid_df.groupby(col)[TARGET].transform('std').astype(np.float16)
+        # Remove temporary files and objects 
+        # to free some hdd space and ram memory
+        #get_ipython().system('rm train_data.bin')
+        del train_data, valid_data, estimator
+        gc.collect()
+    
+        # "Keep" models features for predictions
+        MODEL_FEATURES = features_columns
 
-    keep_cols = [col for col in list(grid_df) if col not in base_cols]
-    grid_df = grid_df[['id','d']+keep_cols]
+    # Predict
+    # Create Dummy DataFrame to store predictions
+    all_preds = pd.DataFrame()
+
+    # Join back the Test dataset with a small part of the training data to make recursive features
+    base_test = get_base_test()
+
+    # Timer to measure predictions time 
+    main_time = time.time()
+
+    # Loop over each prediction day as rolling lags are the most timeconsuming we will calculate it for whole day
+    for PREDICT_DAY in range(1,29):    
+        print('Predict | Day:', PREDICT_DAY)
+        start_time = time.time()
+
+        # Make temporary grid to calculate rolling lags
+        grid_df = base_test.copy()
+        grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT, base_test)], axis=1)
+        
+        for store_id in STORES_IDS:
+            # Read all our models and make predictions for each day/store pairs
+            model_path = 'lgb_model_' + store_id + '_v' + str(VER) + '.bin' 
+            if USE_AUX:
+                model_path = AUX_MODELS + model_path
+        
+            estimator = pickle.load(open(model_path, 'rb'))
+        
+            day_mask = base_test['d'] == (END_TRAIN + PREDICT_DAY)
+            store_mask = base_test['store_id'] == store_id
+            mask = (day_mask) & (store_mask)
+            base_test[TARGET][mask] = estimator.predict(grid_df[mask][MODEL_FEATURES])
+    
+        # Make good column naming and add 
+        # to all_preds DataFrame
+        temp_df = base_test[day_mask][['id',TARGET]]
+        temp_df.columns = ['id', 'F' + str(PREDICT_DAY)]
+        if 'id' in list(all_preds):
+            all_preds = all_preds.merge(temp_df, on = ['id'], how = 'left')
+        else:
+            all_preds = temp_df.copy()
+        
+        print('#'*10, ' %0.2f min round |' % ((time.time() - start_time) / 60), ' %0.2f min total |' % ((time.time() - main_time) / 60), ' %0.2f day sales |' % (temp_df['F'+str(PREDICT_DAY)].sum()))
+        del temp_df
+    
+    all_preds = all_preds.reset_index(drop=True)
+    all_preds
+
+    # Export
+    # Reading competition sample submission and merging our predictions as we have predictions only for "_validation" data
+    # we need to do fillna() for "_evaluation" items
+    submission = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
+    submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
+    submission.to_csv("E:/tmp/kernels/submission_v" + str(VER) + '.csv', index = False)
+
+    print("*** kaggle script executed in:", time.time() - start_time2, "seconds ***") # 9036.16752243042 seconds
