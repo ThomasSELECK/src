@@ -46,7 +46,7 @@ class PreprocessingStep4(BaseEstimator, TransformerMixin):
         None
         """
 
-        self.num_cores = 4 #mp.cpu_count()
+        self.num_cores = 5 #mp.cpu_count()
 
         self.dt_col = dt_col
         self.keep_last_train_days = keep_last_train_days # Number of rows at the end of the train set to keep for appending at the beginning of predict data
@@ -79,7 +79,7 @@ class PreprocessingStep4(BaseEstimator, TransformerMixin):
         features_args_lst += [(d_shift, 0, "shift") for d_shift in range(28, 28 + 15)]
         data_df = X[["id", "shifted_demand"]].copy()
 
-        lag_features_df = pd.concat(Parallel(n_jobs = self.num_cores, max_nbytes = None)(delayed(self.generate_lags)(data_df.copy(), d_shift, d_window, agg_type) for d_shift, d_window, agg_type in features_args_lst), axis = 1)
+        lag_features_df = pd.concat(Parallel(n_jobs = self.num_cores, backend = "threading", max_nbytes = None)(delayed(self.generate_lags)(data_df.copy(), d_shift, d_window, agg_type) for d_shift, d_window, agg_type in features_args_lst), axis = 1)
         X = pd.concat([X, lag_features_df], axis = 1)
             
         return X
