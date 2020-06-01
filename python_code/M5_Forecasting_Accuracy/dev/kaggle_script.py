@@ -9,6 +9,11 @@ from joblib import Parallel, delayed
 from sklearn.preprocessing import LabelEncoder
 import multiprocessing as mp
 from joblib import Parallel, delayed
+import re
+
+from dev.files_paths import *
+from m5_forecasting_accuracy.data_loading.data_loader import DataLoader
+from m5_forecasting_accuracy.preprocessing.PreprocessingStep4 import PreprocessingStep4
 
 warnings.filterwarnings('ignore')
 
@@ -70,12 +75,6 @@ def get_base_test():
 
 
 # Helper to make dynamic rolling lags
-def make_lag(LAG_DAY):
-    lag_df = base_test[['id','d',TARGET]]
-    col_name = 'sales_lag_'+str(LAG_DAY)
-    lag_df[col_name] = lag_df.groupby(['id'])[TARGET].transform(lambda x: x.shift(LAG_DAY)).astype(np.float16)
-    return lag_df[[col_name]]
-
 def make_lag_roll(LAG_DAY, base_test):
     shift_day = LAG_DAY[0]
     roll_wind = LAG_DAY[1]
@@ -147,33 +146,134 @@ if __name__ == "__main__":
         for j in [7,14,30,60]:
             ROLS_SPLIT.append([i,j])
 
+    """
+    with open("E:/M5_Forecasting_Accuracy_cache/orig_train_data.pkl", "rb") as f:
+        grid_df, features_columns, store_id, base_test = pickle.load(f)
+    """
+
+    day_to_predict = 1
+    date_to_predict = "2016-04-25"
+    train_test_date_split = "2016-04-24"
+    eval_start_date = "2016-03-27"
+    dl = DataLoader()
+    training_set_df, target_df, testing_set_df, truth_df, orig_target_df, sample_submission_df = dl.load_data_v3(CALENDAR_PATH_str, SELL_PRICES_PATH_str, SALES_TRAIN_PATH_str, SAMPLE_SUBMISSION_PATH_str, day_to_predict, train_test_date_split, enable_validation = False, first_day = 1, max_lags = 57, shift_target = False)
+    gc.collect()
+
+    print("Statistics for all data:")
+    print("    Training set shape:", training_set_df.shape)
+    print("    Testing set shape:", testing_set_df.shape)
+
+    prp = PreprocessingStep4(dt_col = "date", keep_last_train_days = 209) #366
+    y_train = target_df["demand"].reset_index(drop = True)
+    training_set_df = prp.fit_transform(training_set_df, y_train) # y is not used here
+    gc.collect()
+
+    with open("E:/M5_Forecasting_Accuracy_cache/processed_data_24052020.pkl", "wb") as f:
+        pickle.dump((training_set_df, testing_set_df, target_df, y_train, prp), f)
+
+    """
+    with open("E:/M5_Forecasting_Accuracy_cache/processed_data_24052020.pkl", "rb") as f:
+        training_set_df, testing_set_df, target_df, y_train, prp = pickle.load(f)
+
+    training_set_df["d"] = training_set_df["d"].str.replace("d_", "").apply(lambda x: int(x))
+    testing_set_df["d"] = testing_set_df["d"].str.replace("d_", "").apply(lambda x: int(x))
+    tmp = pd.concat([training_set_df, testing_set_df], axis = 0)
+    tmp = tmp.loc[tmp["store_id"] == store_id] # Should be (4788267, 23)
+    tmp = tmp.loc[tmp["d"] < 1914]
+    grid_df = grid_df.loc[grid_df["d"] < 1914]
+    print("tmp.shape:", tmp.shape)
+    print("grid_df.shape:", grid_df.shape)
+
+    grid_df.columns = [c.replace("tmp_", "") for c in grid_df.columns.tolist()]
+    grid_df.columns = [re.sub("(mean|std|sum)(_[0-9]+)$", "\\1_28\\2", c) if re.match("rolling_(mean|std|sum)(_[0-9]+)$", c) else c for c in grid_df.columns.tolist()]
+
+    tmp = tmp[list(set(tmp.columns.tolist()) & set(grid_df.columns.tolist()))]
+    tmp.sort_values(["id", "d"], ascending = True, inplace = True)
+    tmp = tmp.reset_index(drop = True)
+
+    grid_df.sort_values(["id", "d"], ascending = True, inplace = True)
+    grid_df = grid_df.reset_index(drop = True)
+
+    for col in tmp.columns:
+        try:
+            if not tmp[col].equals(grid_df[col]):
+                print(col, "not equal!")
+        except:
+            print("failed for:", col)
+
+    feats_lst = ["rolling_std_28_7", "rolling_std_28_14", "rolling_std_28_30", "rolling_std_28_60", "rolling_std_28_180", "rolling_mean_1_7", "rolling_mean_1_14", "rolling_mean_1_30", "rolling_mean_1_60", 
+    "rolling_mean_7_7", "rolling_mean_7_14", "rolling_mean_7_30", "rolling_mean_7_60", "rolling_mean_14_7", "rolling_mean_14_14", "rolling_mean_14_30", "rolling_mean_14_60"]
+
+    price_momentum_m not equal!
+    enc_dept_id_mean not equal!
+    enc_item_id_std not equal!
+    price_std not equal!
+    enc_dept_id_std not equal!
+    enc_cat_id_std not equal!
+    item_nunique not equal!
+    rolling_std_28_60 not equal!
+    rolling_std_28_30 not equal!
+    price_momentum_y not equal!
+    enc_item_id_mean not equal!
+    enc_cat_id_mean not equal!
+
+    ['tm_y', 'tm_dw', 'price_momentum_m', 'd', 'price_min', 'enc_dept_id_mean', 'price_momentum', 'price_std', 'enc_dept_id_std', 'price_mean', 'rolling_std_28_60', 'tm_wm', 'tm_d', 'price_momentum_y', 'tm_m', 'rolling_std_28_30', 'price_norm', 'sell_price', 'price_max', 'enc_cat_id_mean', 'enc_cat_id_std', 'enc_item_id_mean', 'tm_w_end', 'price_nunique', 'enc_item_id_std', 'release', 'item_nunique', 'tm_w']
+
+    tm_y is ok but not in correct data type
+    tm_dw is ok but not in correct data type
+    d is ok but not in correct data type
+    tm_wm is ok but not in correct data type
+    tm_d is ok but not in correct data type
+    tm_m is ok but not in correct data type
+    sell_price is ok but not in correct data type
+    tm_w_end is ok but not in correct data type
+    tm_w is ok but not in correct data type
+
+    # For test:
+    store_id not equal!
+    rolling_std_28_7 not equal!
+    rolling_std_28_14 not equal!
+    rolling_std_28_30 not equal!
+    rolling_std_28_60 not equal!
+    rolling_std_28_180 not equal!
+    rolling_mean_1_7 not equal!
+    rolling_mean_1_14 not equal!
+    rolling_mean_1_30 not equal!
+    rolling_mean_1_60 not equal!
+    rolling_mean_7_7 not equal!
+    rolling_mean_7_14 not equal!
+    rolling_mean_7_30 not equal!
+    rolling_mean_7_60 not equal!
+    rolling_mean_14_7 not equal!
+    rolling_mean_14_14 not equal!
+    rolling_mean_14_30 not equal!
+    rolling_mean_14_60 not equal!
+    """
+
     # Train Models
     for store_id in STORES_IDS:
         print('Train', store_id)
     
         # Get grid for current store
-        grid_df, features_columns = get_data_by_store(store_id)
+        #grid_df, features_columns = get_data_by_store(store_id)
+        grid_df = training_set_df.loc[training_set_df["store_id"] == store_id]
+        y_store_train = y_train.loc[training_set_df["store_id"] == store_id]
     
         # Masks for 
         # Train (All data less than 1913)
         # "Validation" (Last 28 days - not real validation set)
-        # Test (All data greater than 1913 day, with some gap for recursive features)
-        train_mask = grid_df['d']<=END_TRAIN
-        valid_mask = train_mask & (grid_df['d'] > (END_TRAIN - P_HORIZON))
-        preds_mask = grid_df['d'] > (END_TRAIN - 100)
-    
-        # Apply masks and save lgb dataset as bin
-        # to reduce memory spikes during dtype convertations
-        # https://github.com/Microsoft/LightGBM/issues/1032
-        # "To avoid any conversions, you should always use np.float32"
-        # or save to bin before start training
-        # https://www.kaggle.com/c/talkingdata-adtracking-fraud-detection/discussion/53773
-        train_data = lgb.Dataset(grid_df[train_mask][features_columns], label = grid_df[train_mask][TARGET])
-        valid_data = lgb.Dataset(grid_df[valid_mask][features_columns], label=grid_df[valid_mask][TARGET])
+        # Test (All data greater than 1913 day, with some gap for recursive features)   
+        X_store_train = grid_df.loc[grid_df["d"] <= END_TRAIN]
+        X_store_train.drop(["id", "d", "store_id"], axis = 1, inplace = True)
+        X_store_valid = grid_df.loc[(grid_df["d"] <= END_TRAIN) & (grid_df["d"] > (END_TRAIN - P_HORIZON))]
+        X_store_valid.drop(["id", "d", "store_id"], axis = 1, inplace = True)
+        features_columns = grid_df.columns.tolist()
+        train_data = lgb.Dataset(X_store_train, label = y_store_train.loc[grid_df["d"] <= END_TRAIN])
+        valid_data = lgb.Dataset(X_store_valid, label = y_store_train.loc[(grid_df["d"] <= END_TRAIN) & (grid_df["d"] > (END_TRAIN - P_HORIZON))])
     
         # Saving part of the dataset for later predictions
         # Removing features that we need to calculate recursively 
-        grid_df = grid_df[preds_mask].reset_index(drop=True)
+        grid_df = grid_df.loc[grid_df["d"] > (END_TRAIN - 100)].reset_index(drop = True)
         keep_cols = [col for col in list(grid_df) if '_tmp_' not in col]
         grid_df = grid_df[keep_cols]
         grid_df.to_pickle("E:/tmp/kernels/aux_model/" + 'test_' + store_id + '.pkl')
@@ -203,13 +303,22 @@ if __name__ == "__main__":
     
         # "Keep" models features for predictions
         MODEL_FEATURES = features_columns
+        #MODEL_FEATURES = ['store_id', 'd', 'item_id', 'dept_id', 'cat_id', 'release', 'sell_price', 'price_max', 'price_min', 'price_std', 'price_mean', 'price_norm', 'price_nunique', 'item_nunique', 'price_momentum', 'price_momentum_m', 'price_momentum_y', 'event_name_1', 'event_type_1', 'event_name_2', 'event_type_2', 'snap_CA', 'snap_TX', 'snap_WI', 'tm_d', 'tm_w', 'tm_m', 'tm_y', 'tm_wm', 'tm_dw', 'tm_w_end', 'enc_cat_id_mean', 'enc_cat_id_std', 'enc_dept_id_mean', 'enc_dept_id_std', 'enc_item_id_mean', 'enc_item_id_std', 'sales_lag_28', 'sales_lag_29', 'sales_lag_30', 'sales_lag_31', 'sales_lag_32', 'sales_lag_33', 'sales_lag_34', 'sales_lag_35', 'sales_lag_36', 'sales_lag_37', 'sales_lag_38', 'sales_lag_39', 'sales_lag_40', 'sales_lag_41', 'sales_lag_42', 'rolling_mean_28_7', 'rolling_std_28_7', 'rolling_mean_28_14', 'rolling_std_28_14', 'rolling_mean_28_30', 'rolling_std_28_30', 'rolling_mean_28_60', 'rolling_std_28_60', 'rolling_mean_28_180', 'rolling_std_28_180', 'rolling_mean_1_7', 'rolling_mean_1_14', 'rolling_mean_1_30', 'rolling_mean_1_60', 'rolling_mean_7_7', 'rolling_mean_7_14', 'rolling_mean_7_30', 'rolling_mean_7_60', 'rolling_mean_14_7', 'rolling_mean_14_14', 'rolling_mean_14_30', 'rolling_mean_14_60']
+        print("MODEL_FEATURES", MODEL_FEATURES)
+
+    del training_set_df, target_df, truth_df
+    gc.collect()
+
+    prp.num_cores = 16
 
     # Predict
     # Create Dummy DataFrame to store predictions
     all_preds = pd.DataFrame()
 
     # Join back the Test dataset with a small part of the training data to make recursive features
-    base_test = get_base_test()
+    #base_test = get_base_test()
+    TARGET = "shifted_demand"
+    testing_set_df[TARGET] = np.nan
 
     # Timer to measure predictions time 
     main_time = time.time()
@@ -220,25 +329,33 @@ if __name__ == "__main__":
         start_time = time.time()
 
         # Make temporary grid to calculate rolling lags
-        grid_df = base_test.copy()
-        grid_df = pd.concat([grid_df, df_parallelize_run(make_lag_roll, ROLS_SPLIT, base_test)], axis=1)
+        grid_df = testing_set_df.copy()
+        grid_df = prp.transform(grid_df)
         
+        ids_df_lst = []
         for store_id in STORES_IDS:
             # Read all our models and make predictions for each day/store pairs
             model_path = 'lgb_model_' + store_id + '_v' + str(VER) + '.bin' 
             if USE_AUX:
                 model_path = AUX_MODELS + model_path
-        
+                
             estimator = pickle.load(open(model_path, 'rb'))
-        
-            day_mask = base_test['d'] == (END_TRAIN + PREDICT_DAY)
-            store_mask = base_test['store_id'] == store_id
-            mask = (day_mask) & (store_mask)
-            base_test[TARGET][mask] = estimator.predict(grid_df[mask][MODEL_FEATURES])
+            grid_df2 = grid_df.loc[(grid_df["d"] == (END_TRAIN + PREDICT_DAY)) & (grid_df["store_id"] == store_id)].drop(["id", "d", "store_id"], axis = 1)
+            ids_df = grid_df[["id", "d"]].loc[(grid_df["d"] == (END_TRAIN + PREDICT_DAY)) & (grid_df["store_id"] == store_id)]
+            preds = estimator.predict(grid_df2)
+            print("For day:", PREDICT_DAY, "and store:", store_id, ": pred.min() =", preds.min(), "; pred.max() =", preds.max())
+            ids_df = ids_df.assign(tmp_demand = preds)
+            ids_df_lst.append(ids_df)
+
+        ids_df = pd.concat(ids_df_lst, axis = 0)
+        ids_df["d"] = ids_df["d"].apply(lambda x: "d_" + str(x))
+        testing_set_df = testing_set_df.merge(ids_df, how = "left", on = ["id", "d"])
+        testing_set_df[TARGET].loc[~testing_set_df["tmp_demand"].isnull()] = testing_set_df["tmp_demand"].loc[~testing_set_df["tmp_demand"].isnull()]
+        testing_set_df.drop("tmp_demand", axis = 1, inplace = True)
     
         # Make good column naming and add 
-        # to all_preds DataFrame
-        temp_df = base_test[day_mask][['id',TARGET]]
+        # to all_preds DataFrame        
+        temp_df = testing_set_df[['id', TARGET]].loc[testing_set_df['d'] == "d_" + str(END_TRAIN + PREDICT_DAY)]
         temp_df.columns = ['id', 'F' + str(PREDICT_DAY)]
         if 'id' in list(all_preds):
             all_preds = all_preds.merge(temp_df, on = ['id'], how = 'left')
@@ -249,13 +366,12 @@ if __name__ == "__main__":
         del temp_df
     
     all_preds = all_preds.reset_index(drop=True)
-    all_preds
 
     # Export
     # Reading competition sample submission and merging our predictions as we have predictions only for "_validation" data
     # we need to do fillna() for "_evaluation" items
     submission = pd.read_csv(ORIGINAL+'sample_submission.csv')[['id']]
     submission = submission.merge(all_preds, on=['id'], how='left').fillna(0)
-    submission.to_csv("E:/tmp/kernels/submission_v" + str(VER) + '.csv', index = False)
+    submission.to_csv("E:/tmp/kernels/submission_v" + str(VER) + '_01062020.csv', index = False)
 
     print("*** kaggle script executed in:", time.time() - start_time2, "seconds ***") # 9036.16752243042 seconds

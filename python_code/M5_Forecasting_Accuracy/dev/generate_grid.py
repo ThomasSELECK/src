@@ -202,6 +202,8 @@ if __name__ == "__main__":
     prices_df['price_momentum_y'] = prices_df['sell_price']/prices_df.groupby(['store_id','item_id','year'])['sell_price'].transform('mean')
 
     del prices_df['month'], prices_df['year']
+
+    print(prices_df.isnull().sum().sort_values(ascending = False).head(15))
     
     # Merge prices and save part 2
     print('Merge prices and save part 2')
