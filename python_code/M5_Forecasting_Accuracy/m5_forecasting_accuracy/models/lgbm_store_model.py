@@ -27,7 +27,6 @@ from m5_forecasting_accuracy.models.lightgbm_wrapper import LGBMRegressor
 from dev.files_paths import *
 
 START_TRAIN = 0                # We can skip some rows (Nans/faster training)
-END_TRAIN = 1913               # End day of our train set
 P_HORIZON = 28                 # Prediction horizon
 SEED = 42
 AUX_MODELS = "E:/tmp/kernels/aux_model/"
@@ -43,7 +42,7 @@ class LGBMStoreModel(object):
     This class contains everything needed to train a model and make predictions recursively for one store in the future.
     """
 
-    def __init__(self, train_test_date_split, eval_start_date, store_id):
+    def __init__(self, train_test_date_split, eval_start_date, store_id, tr_last = 1913):
         """
         This is the class' constructor.
 
@@ -64,6 +63,7 @@ class LGBMStoreModel(object):
         """
 
         self.store_id = store_id
+        self.tr_last = tr_last
 
         self.prp = PreprocessingStep4(dt_col = "date", keep_last_train_days = 209) # 366 = shift + max rolling (365)
 
@@ -126,17 +126,17 @@ class LGBMStoreModel(object):
         #self.lgb_model.fit(X_train, y_train, sample_weights = training_set_weights_sr)
         
         # Create LGBM datasets
-        X_store_train = X_train.loc[X_train["d"] <= END_TRAIN]
+        X_store_train = X_train.loc[X_train["d"] <= self.tr_last]
         X_store_train.drop(["id", "d", "store_id"], axis = 1, inplace = True)
-        X_store_valid = X_train.loc[(X_train["d"] <= END_TRAIN) & (X_train["d"] > (END_TRAIN - P_HORIZON))]
+        X_store_valid = X_train.loc[(X_train["d"] <= self.tr_last) & (X_train["d"] > (self.tr_last - P_HORIZON))]
         X_store_valid.drop(["id", "d", "store_id"], axis = 1, inplace = True)
         features_columns = X_train.columns.tolist()
-        train_data = lgb.Dataset(X_store_train, label = y_train.loc[X_train["d"] <= END_TRAIN])
-        valid_data = lgb.Dataset(X_store_valid, label = y_train.loc[(X_train["d"] <= END_TRAIN) & (X_train["d"] > (END_TRAIN - P_HORIZON))])
+        train_data = lgb.Dataset(X_store_train, label = y_train.loc[X_train["d"] <= self.tr_last])
+        valid_data = lgb.Dataset(X_store_valid, label = y_train.loc[(X_train["d"] <= self.tr_last) & (X_train["d"] > (self.tr_last - P_HORIZON))])
     
         # Saving part of the dataset for later predictions
         # Removing features that we need to calculate recursively 
-        X_train = X_train.loc[X_train["d"] > (END_TRAIN - 100)].reset_index(drop = True)
+        X_train = X_train.loc[X_train["d"] > (self.tr_last - 100)].reset_index(drop = True)
         keep_cols = [col for col in list(X_train) if "_tmp_" not in col]
         X_train = X_train[keep_cols]
         X_train.to_pickle("E:/tmp/kernels/aux_model/" + "test_" + self.store_id + ".pkl")
@@ -191,8 +191,8 @@ class LGBMStoreModel(object):
             model_path = "lgb_model_" + self.store_id + "_v" + str(VER) + ".bin" 
             model_path = AUX_MODELS + model_path
                 
-            grid_df2 = grid_df.loc[(grid_df["d"] == (END_TRAIN + predict_day)) & (grid_df["store_id"] == self.store_id)].drop(["id", "d", "store_id"], axis = 1)
-            ids_df = grid_df[["id", "d"]].loc[(grid_df["d"] == (END_TRAIN + predict_day)) & (grid_df["store_id"] == self.store_id)]
+            grid_df2 = grid_df.loc[(grid_df["d"] == (self.tr_last + predict_day)) & (grid_df["store_id"] == self.store_id)].drop(["id", "d", "store_id"], axis = 1)
+            ids_df = grid_df[["id", "d"]].loc[(grid_df["d"] == (self.tr_last + predict_day)) & (grid_df["store_id"] == self.store_id)]
             preds = self.estimator.predict(grid_df2)
             ids_df = ids_df.assign(tmp_demand = preds)
             ids_df["d"] = ids_df["d"].apply(lambda x: "d_" + str(x))
@@ -201,7 +201,7 @@ class LGBMStoreModel(object):
             X_test.drop("tmp_demand", axis = 1, inplace = True)
     
             # Make good column naming and add to all_preds DataFrame        
-            temp_df = X_test[["id", "shifted_demand"]].loc[X_test["d"] == "d_" + str(END_TRAIN + predict_day)]
+            temp_df = X_test[["id", "shifted_demand"]].loc[X_test["d"] == "d_" + str(self.tr_last + predict_day)]
             temp_df.columns = ["id", "F" + str(predict_day)]
             if "id" in list(all_preds):
                 all_preds = all_preds.merge(temp_df, on = ["id"], how = "left")

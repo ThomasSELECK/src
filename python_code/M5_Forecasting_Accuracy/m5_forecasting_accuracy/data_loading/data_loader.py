@@ -430,7 +430,7 @@ class DataLoader():
 
         return training_set_df, testing_set_df, truth_df
 
-    def load_data_v3(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, day_to_predict, train_test_date_split, enable_validation = True, first_day = 1200, max_lags = 57, shift_target = True):
+    def load_data_v3(self, calendar_data_path_str, sell_prices_data_path_str, sales_train_validation_data_path_str, sample_submission_data_path_str, day_to_predict, train_test_date_split, enable_validation = True, first_day = 1200, max_lags = 57, shift_target = True, tr_last = 1913):
         """
         This function is a wrapper for the loading of the data.
 
@@ -466,7 +466,6 @@ class DataLoader():
         print("    Reading files from disk...")
 
         # For `sales_train_validation`
-        tr_last = 1913
         test_set_days_length = 28 #1 #28
         valid_days_lst = [f"d_{day}" for day in range(first_day, tr_last + 1)]
         id_columns_lst = ["id", "item_id", "dept_id", "store_id", "cat_id", "state_id"]
